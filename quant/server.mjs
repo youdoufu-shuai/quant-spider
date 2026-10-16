@@ -402,6 +402,89 @@ const server = http.createServer(async (req, res) => {
     // A 股 6741 只、加密 511 对，不可能全塞进 <select>（会卡死浏览器）。
     // 所以下拉只给常用项，其余走搜索。
     // ⚠️ 这些路由必须在 serveStatic 之前，否则会被当成静态文件路径 404。
+    // ── AI 设置 API ────────────────────────────────────────
+    // 安全要点：GET 永远只回**脱敏**视图（apiKeySet + sk-…abcd），
+    // 绝不回密钥原值；密钥只存在于 quant/state/ai-config.json（已 gitignore）。
+    if (pathname.startsWith('/api/ai')) {
+      const AIS = path.join(here, 'ai_settings.py');
+      const reply = (code, obj) => {
+        res.writeHead(code, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(obj));
+      };
+
+      // GET /api/ai/settings —— 当前配置（脱敏）+ 可用性
+      if (pathname === '/api/ai/settings' && req.method === 'GET') {
+        try {
+          const r = await runPython(AIS, ['show'], 30000);
+          reply(200, r);
+        } catch (e) {
+          reply(500, { error: String(e.message || e) });
+        }
+        return;
+      }
+
+      // GET /api/ai/providers —— 预置供应商列表（前端下拉框用）
+      if (pathname === '/api/ai/providers' && req.method === 'GET') {
+        const probe = [
+          'import sys, json',
+          `sys.path.insert(0, r"${here}")`,
+          'from ai_settings import PROVIDERS, DEFAULT_PROVIDER, DEFAULT_SYSTEM_PROMPT',
+          'print(json.dumps({"providers": PROVIDERS,',
+          '  "default": DEFAULT_PROVIDER, "systemPrompt": DEFAULT_SYSTEM_PROMPT},',
+          '  ensure_ascii=False))',
+        ].join('\n');
+        const r = await runPython('-c', [probe], 30000)
+          .catch(e => ({ error: String(e.message || e) }));
+        reply(r.error ? 500 : 200, r);
+        return;
+      }
+
+      // POST /api/ai/settings —— 保存（部分更新）
+      if (pathname === '/api/ai/settings' && req.method === 'POST') {
+        const b = await readBody(req);
+        // 只透传白名单字段，避免前端塞任意键进去
+        const allow = ['provider', 'url', 'model', 'api_key', 'timeout',
+                       'temperature', 'system_prompt', 'enabled', 'clearApiKey'];
+        const patch = {};
+        for (const k of allow) {
+          if (Object.prototype.hasOwnProperty.call(b, k)) patch[k] = b[k];
+        }
+        const script = [
+          'import sys, json',
+          `sys.path.insert(0, r"${here}")`,
+          'from ai_settings import AIStore',
+          'patch = json.loads(sys.argv[1])',
+          'st = AIStore(); st.load()',
+          'st.save(patch)',
+          'print(json.dumps({"settings": st.settings.public_view(),',
+          '                  "status": st.status()}, ensure_ascii=False))',
+        ].join('\n');
+        try {
+          // patch 通过**命令行参数**传（execFile 不能直接喂 stdin）。
+          // 字段有限、体积小，远不到命令行长度上限。
+          const r = await runPython('-c', [script, JSON.stringify(patch)], 30000);
+          reply(200, r);
+        } catch (e) {
+          reply(400, { error: String(e.message || e) });
+        }
+        return;
+      }
+
+      // POST /api/ai/test —— 真发一次请求验证配置
+      if (pathname === '/api/ai/test' && req.method === 'POST') {
+        try {
+          const r = await runPython(AIS, ['test'], 90000);
+          reply(r.ok ? 200 : 400, r);
+        } catch (e) {
+          reply(500, { error: String(e.message || e) });
+        }
+        return;
+      }
+
+      reply(404, { error: '未知的 AI 接口: ' + pathname });
+      return;
+    }
+
     // ── 参数优化 API ────────────────────────────────────────
     // 优化可能要跑几秒到几十秒（每个参数组合都要回测两次：
     // 训练集 + 验证集），所以单独走一条路由，不混进 /api/quant。

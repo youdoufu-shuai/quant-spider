@@ -46,7 +46,7 @@
   th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #17171c;white-space:nowrap}
   th{color:var(--muted);font-weight:400;font-size:10px}
   th:first-child,td:first-child{text-align:left}
-  .mut{color:var(--muted)} .up{color:var(--up)} .dn{color:var(--down)} .wn{color:var(--warn)}
+  .mut{color:var(--muted)} .up{color:var(--up)} .dn{color:var(--down)} .wn{color:var(--warn)} .ok{color:var(--ok)}
   .big{font-size:26px;line-height:1.15}
   .kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:11px}
   .kv .k{color:var(--muted)}
@@ -249,6 +249,81 @@
       </div>
     </div>
 
+    <!-- AI 配置 -->
+    <div class="card" id="aiCard">
+      <h2>
+        <span>AI 决策配置</span>
+        <span style="display:flex;gap:8px;align-items:center">
+          <span class="mut" id="aiBadge">—</span>
+          <button id="aiToggle" style="padding:1px 8px">展开</button>
+        </span>
+      </h2>
+      <div class="body" id="aiBody" style="display:none">
+        <div class="row">
+          <label class="f" style="min-width:150px">供应商
+            <select id="aiProvider"></select>
+          </label>
+          <label class="f">模型
+            <input id="aiModel" list="aiModelList" placeholder="留空用默认"
+                   style="width:170px" autocomplete="off">
+            <datalist id="aiModelList"></datalist>
+          </label>
+          <label class="f" style="min-width:170px">API Key
+            <input id="aiKey" type="password" placeholder="留空 = 不修改"
+                   style="width:170px" autocomplete="new-password">
+          </label>
+          <label class="f">超时(秒)
+            <input id="aiTimeout" type="number" min="3" max="300" step="1"
+                   style="width:66px">
+          </label>
+          <label class="f">温度
+            <input id="aiTemp" type="number" min="0" max="2" step="0.1"
+                   style="width:60px">
+          </label>
+        </div>
+
+        <div class="row" style="margin-top:9px">
+          <label class="f" style="flex:1;min-width:260px">接口地址
+            <input id="aiUrl" placeholder="留空用供应商默认"
+                   style="width:100%" autocomplete="off">
+          </label>
+        </div>
+
+        <div class="row" style="margin-top:9px">
+          <label class="f" style="flex:1;min-width:260px">
+            <span>系统提示词
+              <button id="aiPromptReset" style="padding:0 6px;font-size:10px">恢复默认</button>
+            </span>
+            <textarea id="aiPrompt" rows="4"
+              style="width:100%;background:#191a1e;color:var(--text);
+                     border:1px solid var(--border);border-radius:3px;
+                     padding:6px;font:11px/1.6 Consolas,monospace;resize:vertical"
+              placeholder="留空使用内置提示词"></textarea>
+          </label>
+        </div>
+
+        <div class="row" style="margin-top:9px;align-items:center">
+          <label class="f" style="flex-direction:row;align-items:center;gap:6px">
+            <input id="aiEnabled" type="checkbox" style="width:auto">
+            <span>允许使用 AI 模式</span>
+          </label>
+          <span class="spacer"></span>
+          <button id="aiTest">测试连接</button>
+          <button id="aiSave" class="primary">保存</button>
+        </div>
+
+        <div id="aiResult" style="margin-top:9px"></div>
+
+        <div class="note" id="aiNote">
+          <b>密钥不会回显</b>：保存后只显示 <code>sk-xxx…abcd</code> 这样的提示，
+          原值只存在于本机 <code>quant/state/ai-config.json</code>（已在 .gitignore 里）。
+          <br>API Key 输入框<b>留空 = 不修改</b>；要清除请点「清除密钥」。
+          <br><b>AI 的输出只是建议</b> —— 风控层独立生效，
+          AI 说"满仓"也不能突破最大仓位，说"不卖"也会被止损强制平仓。
+        </div>
+      </div>
+    </div>
+
     <!-- 决策解释 -->
     <div class="card">
       <h2><span>决策解释</span><span class="mut" id="decMeta">—</span></h2>
@@ -375,9 +450,13 @@ async function api(method, path, body) {
   return data;
 }
 
-/** 标的接口不在 /api/paper 下面，单独走一条 */
-async function symApi(path) {
-  const r = await fetch('/api' + path);
+/** 旁路接口（不在 /api/paper 下面）：标的搜索、AI 设置等 */
+async function symApi(path, opts) {
+  const r = await fetch('/api' + path, {
+    method: opts?.method || 'GET',
+    headers: opts?.body ? { 'Content-Type': 'application/json' } : {},
+    body: opts?.body ? JSON.stringify(opts.body) : undefined,
+  });
   const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
   if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
   return data;
@@ -446,6 +525,7 @@ async function boot() {
     if (id && (!CUR || CUR.id !== id)) selectSession(id);
   });
   syncAutoRows();            // 初始化自动交易面板的显示状态
+  await bootAI();            // AI 配置面板
   await loadSessions();
   // 支持直接打开某个账户：/paper.html#<sessionId>
   const hash = location.hash.slice(1);
@@ -456,6 +536,172 @@ function fillIntervals() {
   const m = META.markets[$('mkt').value];
   $('iv').innerHTML = m.intervals.map(i => `<option value="${i}">${i}</option>`).join('');
   $('iv').value = m.defaultInterval;
+}
+
+// ══════════════════════════════════════════════════════
+//  AI 配置面板
+// ══════════════════════════════════════════════════════
+// 设计要点：
+//   · 密钥永不回显 —— 输入框留空 = 不修改，清空要显式点按钮
+//   · 供应商下拉带 DeepSeek（默认），换供应商自动带出它的默认 URL/模型
+//   · 「测试连接」是真发一次请求，不是只校验格式
+let AI_PROVIDERS = null;
+
+async function bootAI() {
+  $('aiToggle').onclick = () => {
+    const b = $('aiBody');
+    const open = b.style.display !== 'none';
+    b.style.display = open ? 'none' : 'block';
+    $('aiToggle').textContent = open ? '展开' : '收起';
+  };
+  $('aiSave').onclick = saveAI;
+  $('aiTest').onclick = testAI;
+  $('aiProvider').onchange = onProviderChange;
+  $('aiPromptReset').onclick = () => {
+    $('aiPrompt').value = '';
+    $('aiPrompt').placeholder = '留空使用内置提示词（推荐）';
+    aiResult('warn', '已清空自定义提示词 —— 保存后会用内置的。');
+  };
+
+  try {
+    // ⚠️ 用 symApi 而不是 api —— api() 会自动加 /api/paper 前缀，
+    //    而 AI 接口挂在 /api/ai 下面（和标的搜索一样是旁路接口）。
+    const p = await symApi('/ai/providers');
+    AI_PROVIDERS = p.providers;
+    $('aiProvider').innerHTML = Object.entries(p.providers)
+      .map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
+    $('aiPrompt').placeholder =
+      `留空使用内置提示词（${p.systemPrompt.length} 字，要求模型只输出 JSON）`;
+  } catch (e) {
+    $('aiBadge').innerHTML = '<span class="dn">AI 配置不可用</span>';
+    $('aiSave').disabled = $('aiTest').disabled = true;
+    return;
+  }
+  await loadAI();
+}
+
+function onProviderChange() {
+  const prov = AI_PROVIDERS?.[$('aiProvider').value];
+  if (!prov) return;
+  // 换供应商时把 URL/模型清空，让后端用新供应商的默认值 ——
+  // 否则会残留上一个供应商的地址，测试时报 404 让人摸不着头脑
+  $('aiUrl').value = '';
+  $('aiUrl').placeholder = prov.url || '必填：完整端点地址';
+  $('aiModel').value = '';
+  $('aiModel').placeholder = prov.model || '必填';
+  const dl = $('aiModelList');
+  dl.innerHTML = (prov.models || []).map(m => `<option value="${m}">`).join('');
+  aiResult('info', `<b>${prov.label}</b>：${prov.note}`
+    + (prov.keyUrl ? `　<a href="${prov.keyUrl}" target="_blank" rel="noopener">获取 API Key →</a>` : ''));
+}
+
+async function loadAI() {
+  try {
+    const d = await symApi('/ai/settings');
+    const s = d.settings, st = d.status;
+    $('aiProvider').value = s.provider;
+    $('aiUrl').value = s.url || '';
+    $('aiUrl').placeholder = AI_PROVIDERS?.[s.provider]?.url || '必填';
+    $('aiModel').value = s.model || '';
+    $('aiModel').placeholder = AI_PROVIDERS?.[s.provider]?.model || '必填';
+    const dl = $('aiModelList');
+    dl.innerHTML = (AI_PROVIDERS?.[s.provider]?.models || [])
+      .map(m => `<option value="${m}">`).join('');
+    $('aiTimeout').value = s.timeout;
+    $('aiTemp').value = s.temperature;
+    $('aiPrompt').value = s.systemPrompt || '';
+    $('aiEnabled').checked = !!s.enabled;
+    // ★ 密钥框永远留空 —— 后端不回原值，这里只展示脱敏提示
+    $('aiKey').value = '';
+    $('aiKey').placeholder = s.apiKeySet
+      ? `已设置 ${s.apiKeyHint}（留空=不改）` : 'sk-…（必填）';
+    renderAIBadge(st);
+    if (st.loadError) {
+      aiResult('warn', `配置文件读取有问题，已回落默认值：<code>${esc(st.loadError)}</code>`);
+    }
+  } catch (e) {
+    aiResult('err', '读取 AI 配置失败：' + esc(e.message));
+  }
+}
+
+function renderAIBadge(st) {
+  const b = $('aiBadge');
+  if (st.ready) {
+    b.innerHTML = `<span class="ok">✓ ${esc(st.providerLabel)} · ${esc(st.model)}</span>`;
+  } else {
+    b.innerHTML = `<span class="wn">未就绪：${esc(st.problems[0] || '未知')}</span>`;
+  }
+}
+
+function aiResult(kind, html) {
+  const cls = kind === 'ok' ? 'ok' : kind === 'err' ? 'dn' : kind === 'warn' ? 'wn' : 'mut';
+  $('aiResult').innerHTML =
+    `<div class="${cls}" style="font-size:11px;line-height:1.8;
+       border-left:2px solid currentColor;padding:6px 9px;background:#0b0b0e">${html}</div>`;
+}
+
+async function saveAI() {
+  const btn = $('aiSave');
+  btn.disabled = true;
+  try {
+    const body = {
+      provider: $('aiProvider').value,
+      url: $('aiUrl').value.trim(),
+      model: $('aiModel').value.trim(),
+      timeout: Number($('aiTimeout').value) || 30,
+      temperature: Number($('aiTemp').value) || 0,
+      system_prompt: $('aiPrompt').value,
+      enabled: $('aiEnabled').checked,
+    };
+    // ★ 只有用户真的输了内容才提交 api_key ——
+    //   空字符串会被后端解释为"不修改"，不会清掉已存的密钥
+    const k = $('aiKey').value.trim();
+    if (k) body.api_key = k;
+    const d = await symApi('/ai/settings', { method: 'POST', body });
+    const st = d.status;
+    renderAIBadge(st);
+    $('aiKey').value = '';
+    $('aiKey').placeholder = d.settings.apiKeySet
+      ? `已设置 ${d.settings.apiKeyHint}（留空=不改）` : 'sk-…（必填）';
+    if (st.ready) {
+      aiResult('ok', `已保存。当前：<b>${esc(st.providerLabel)}</b> / `
+        + `<code>${esc(st.model)}</code><br>点「测试连接」确认真能调通。`);
+    } else {
+      aiResult('warn', `已保存，但还不能用：<br>· ${st.problems.map(esc).join('<br>· ')}`);
+    }
+    // 自动交易面板的说明文案要跟着配置变（比如 AI 未就绪时给出提示）
+    syncAutoRows();
+  } catch (e) {
+    aiResult('err', '保存失败：' + esc(e.message));
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function testAI() {
+  const btn = $('aiTest');
+  btn.disabled = true;
+  btn.textContent = '测试中…';
+  aiResult('info', '正在真发一次请求（会消耗少量 token）…');
+  try {
+    const r = await fetch('/api/ai/test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    const d = await r.json().catch(() => ({}));
+    if (d.ok) {
+      aiResult('ok', `✓ 连接成功　<b>${d.ms} ms</b>　模型 <code>${esc(d.model)}</code>`
+        + (d.usage?.total ? `　用了 ${d.usage.total} tokens` : '')
+        + `<br>模型回复：<code>${esc((d.reply || '').slice(0, 160))}</code>`);
+    } else {
+      aiResult('err', `✗ ${esc(d.error || '失败')}`
+        + (d.detail ? `<br><span class="mut">${esc(d.detail.slice(0, 300))}</span>` : ''));
+    }
+  } catch (e) {
+    aiResult('err', '测试请求本身失败：' + esc(e.message));
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '测试连接';
+  }
 }
 
 // ---------- 标的选择 ----------
@@ -679,7 +925,10 @@ function syncAutoRows() {
           + '和最早的版本一致，可用来对照其他模式的效果。',
     ai: '<b>外部 AI 决策</b>：把市场快照（20 项指标 + 账户状态）交给外部模型，'
       + '由它给出买卖与仓位。<br>'
-      + '需要先配好端点，见 <b>quant/autotrader.py</b> 里 AIDecider 的说明。<br>'
+      + '需要先在上方「<b>AI 决策配置</b>」里填好端点与 API Key（默认 DeepSeek），'
+      + '并点「测试连接」确认能调通。<br>'
+      + '配置没弄好时<b>不会静默假装工作</b> —— 会回落内置打分，'
+      + '并在事件日志里写明原因。<br>'
       + '<b>风控仍在本地判定</b>，AI 的输出会被夹到仓位上限内 —— '
       + '一个胡说的模型不能把账户打爆。',
   }[m];

@@ -541,12 +541,22 @@ class PaperSession:
         return (self.qty * self.price / eq) if eq > 0 else 0.0
 
     def _decider(self):
-        """按 auto_mode 造决策器。"""
+        """
+        按 auto_mode 造决策器。
+
+        ⚠️ AI 模式走 ai_settings 的配置（页面里能改），
+           不再只读环境变量 —— 这样用户可以换模型而不用重启服务。
+           配置没弄好时**明确抛错**，由 _auto_step 捕获后回落内置打分，
+           并在事件日志里留下原因（不静默降级）。
+        """
         cfg = self.auto_config
         cfg.mode = self.auto_mode
         cfg.strategy = self.strategy
         if self.auto_mode == "ai":
-            return AIDecider(cfg)
+            from ai_settings import AIStore
+            store = AIStore()
+            store.load()
+            return store.build_decider(cfg)
         return AutoDecider(cfg)
 
     def _auto_step(self, bar: int, first: bool = False,
