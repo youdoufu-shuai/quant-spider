@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>机械蜘蛛 · 美术查看器</title>
+<style>
+  :root{
+    --bg:#080909; --panel:#101013; --border:#29292e;
+    --text:#e8e8e9; --muted:#9998a0; --accent:#f23c83; --spider:#48d6a4;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+    font:13px/1.6 Consolas,"Cascadia Code",ui-monospace,monospace}
+  #wrap{display:flex;height:100%}
+  #stage{flex:1;position:relative;display:grid;place-items:center;overflow:hidden}
+  canvas{display:block}
+  #side{width:300px;border-left:1px solid var(--border);background:var(--panel);
+    padding:16px;overflow:auto}
+  h1{font-size:13px;letter-spacing:.14em;margin:0 0 4px;color:var(--text)}
+  .sub{color:var(--accent);font-size:11px;letter-spacing:.1em;margin-bottom:18px}
+  .grp{margin-bottom:20px;padding-top:12px;border-top:1px solid var(--border)}
+  .grp:first-of-type{border-top:0;padding-top:0}
+  .grp h2{font-size:11px;letter-spacing:.1em;color:var(--muted);margin:0 0 10px;font-weight:400}
+  label{display:flex;justify-content:space-between;align-items:center;
+    font-size:11px;color:var(--muted);margin:9px 0 3px}
+  label b{color:var(--text);font-weight:400}
+  input[type=range]{width:100%;accent-color:var(--accent);height:16px}
+  .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  button{background:#191a1e;color:var(--text);border:1px solid var(--border);
+    padding:5px 10px;font:inherit;font-size:11px;cursor:pointer;border-radius:3px}
+  button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .sw{display:flex;align-items:center;gap:8px;margin:7px 0;font-size:11px;color:var(--muted)}
+  input[type=color]{width:34px;height:20px;border:1px solid var(--border);
+    background:none;padding:0;cursor:pointer}
+  .note{font-size:10px;color:var(--muted);line-height:1.7;margin-top:10px;
+    padding:8px;background:#0b0b0e;border-left:2px solid var(--accent)}
+  kbd{background:#1c1d22;border:1px solid var(--border);border-radius:3px;
+    padding:1px 5px;font-size:10px}
+</style>
+<script type="importmap">
+{ "imports": { } }
+</script>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage"><canvas id="cv"></canvas></div>
+  <div id="side">
+    <h1>机械蜘蛛</h1>
+    <div class="sub">SPIDER · ART VIEWER</div>
+
+    <div class="grp">
+      <h2>视图</h2>
+      <label>缩放 <b id="vScale">5.0×</b></label>
+      <input type="range" id="scale" min="2" max="12" step="0.5" value="5">
+      <label>运动速度 <b id="vSpeed">1.00×</b></label>
+      <input type="range" id="speed" min="0" max="3" step="0.05" value="1">
+      <label>模拟行进 <b id="vVel">0</b></label>
+      <input type="range" id="vel" min="0" max="240" step="4" value="0">
+    </div>
+
+    <div class="grp">
+      <h2>显示</h2>
+      <div class="row">
+        <button id="bGrid" class="on">参考网格</button>
+        <button id="bTrail" class="on">步态轨迹</button>
+        <button id="bPause">暂停</button>
+        <button id="bReduced">减少动效</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>配色</h2>
+      <div class="sw"><input type="color" id="cSpider" value="#48d6a4"><span>躯体 / 腿</span></div>
+      <div class="sw"><input type="color" id="cAccent" value="#f23c83"><span>核心</span></div>
+      <div class="row">
+        <button data-preset="default">原始</button>
+        <button data-preset="amber">琥珀</button>
+        <button data-preset="ice">冰蓝</button>
+        <button data-preset="blood">绯红</button>
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>快捷键</h2>
+      <div class="note">
+        <kbd>空格</kbd> 暂停 / 继续<br>
+        <kbd>R</kbd> 减少动效<br>
+        <kbd>G</kbd> 参考网格<br>
+        <kbd>滚轮</kbd> 缩放
+      </div>
+    </div>
+
+    <div class="grp">
+      <h2>关于</h2>
+      <div class="note">
+        本页直接复用 <b>app/spider.js</b> 的 <b>drawSpiderBody()</b> ——
+        与实时面板是同一份绘制代码，所以这里看到的画风就是面板里的画风，
+        只是放大到能看清细节。<br><br>
+        调这里看到的差别，就是刚才美术优化的实际内容。
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { drawSpiderBody, legPose, heartbeatAt } from './spider.js';
+
+const $ = (id) => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d', { alpha: false });
+
+const st = {
+  scale: 5, simSpeed: 1, vel: 0, paused: false, reduced: false,
+  grid: true, trail: true, t0: performance.now(), t: 0,
+  spider: '#48d6a4', accent: '#f23c83',
+};
+
+// ---- 交互 ----
+const bind = (id, key, fmt) => {
+  const el = $(id), out = $('v' + id[0].toUpperCase() + id.slice(1));
+  const upd = () => { st[key] = parseFloat(el.value); if (out) out.textContent = fmt(st[key]); };
+  el.addEventListener('input', upd); upd();
+};
+bind('scale', 'scale', (v) => v.toFixed(1) + '×');
+bind('speed', 'simSpeed', (v) => v.toFixed(2) + '×');
+bind('vel', 'vel', (v) => String(v));
+
+$('bGrid').onclick = (e) => { st.grid = !st.grid; e.target.classList.toggle('on', st.grid); };
+$('bTrail').onclick = (e) => { st.trail = !st.trail; e.target.classList.toggle('on', st.trail); };
+$('bPause').onclick = (e) => { st.paused = !st.paused; e.target.classList.toggle('on', st.paused); e.target.textContent = st.paused ? '继续' : '暂停'; };
+$('bReduced').onclick = (e) => { st.reduced = !st.reduced; e.target.classList.toggle('on', st.reduced); };
+$('cSpider').oninput = (e) => { st.spider = e.target.value; };
+$('cAccent').oninput = (e) => { st.accent = e.target.value; };
+
+const PRESETS = {
+  default: { spider: '#48d6a4', accent: '#f23c83' },
+  amber:   { spider: '#e0a34a', accent: '#ff6b35' },
+  ice:     { spider: '#5fb8e8', accent: '#a86bff' },
+  blood:   { spider: '#d8506a', accent: '#ff2d55' },
+};
+for (const b of document.querySelectorAll('[data-preset]')) {
+  b.onclick = () => {
+    const p = PRESETS[b.dataset.preset];
+    st.spider = p.spider; st.accent = p.accent;
+    $('cSpider').value = p.spider; $('cAccent').value = p.accent;
+  };
+}
+
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space') { e.preventDefault(); $('bPause').click(); }
+  else if (e.key.toLowerCase() === 'r') $('bReduced').click();
+  else if (e.key.toLowerCase() === 'g') $('bGrid').click();
+});
+cv.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const el = $('scale');
+  el.value = String(Math.max(2, Math.min(12, parseFloat(el.value) - Math.sign(e.deltaY) * 0.5)));
+  el.dispatchEvent(new Event('input'));
+}, { passive: false });
+
+// ---- 尺寸 ----
+function resize() {
+  const dpr = Math.min(2, Math.max(1, devicePixelRatio || 1));
+  const r = $('stage').getBoundingClientRect();
+  cv.width = Math.round(r.width * dpr);
+  cv.height = Math.round(r.height * dpr);
+  cv.style.width = r.width + 'px';
+  cv.style.height = r.height + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { w: r.width, h: r.height };
+}
+let size = resize();
+addEventListener('resize', () => { size = resize(); });
+
+// ---- 主循环 ----
+const trail = [];
+let last = performance.now();
+
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  if (!st.paused) st.t += dt * st.simSpeed;
+  const t = st.t;
+
+  const { w, h } = size;
+  const cx = w / 2, cy = h / 2;
+
+  ctx.fillStyle = '#080909';
+  ctx.fillRect(0, 0, w, h);
+
+  const g = 34 * st.scale;   // 参考网格间距
+  if (st.grid) {
+    ctx.strokeStyle = 'rgba(72,214,164,0.055)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = cx % g; x < w; x += g) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
+    for (let y = cy % g; y < h; y += g) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
+    ctx.stroke();
+    // 中心十字
+    ctx.strokeStyle = 'rgba(242,60,131,0.16)';
+    ctx.beginPath(); ctx.moveTo(cx - 14, cy); ctx.lineTo(cx + 14, cy);
+    ctx.moveTo(cx, cy - 14); ctx.lineTo(cx, cy + 14); ctx.stroke();
+  }
+
+  // 模拟行进时给 body 一个速度，腿的步态会跟着变
+  const body = { x: cx, y: cy, vx: st.vel, vy: -st.vel * 0.35 };
+
+  // 步态轨迹：把足端位置记下来，能直观看出落脚点和抬腿弧线
+  if (st.trail && !st.paused) {
+    const speed = Math.hypot(body.vx, body.vy);
+    const rot = Math.atan2(body.vx, -body.vy) || 0;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    for (const side of [-1, 1]) {
+      for (let index = 0; index < 8; index += 2) {
+        const p = legPose({ time: t, side, index, speed, reducedMotion: st.reduced });
+        // 把局部足端转到世界坐标
+        const fx = p.foot.x * cos - p.foot.y * sin;
+        const fy = p.foot.x * sin + p.foot.y * cos;
+        trail.push({ x: cx + fx * st.scale, y: cy + fy * st.scale, life: 1 });
+      }
+    }
+    if (trail.length > 4000) trail.splice(0, trail.length - 4000);
+  }
+  if (st.trail) {
+    for (let i = trail.length - 1; i >= 0; i--) {
+      trail[i].life -= dt * 0.55;
+      if (trail[i].life <= 0) { trail.splice(i, 1); continue; }
+    }
+    ctx.fillStyle = 'rgba(72,214,164,0.10)';
+    for (const p of trail) ctx.fillRect(p.x - 0.5, p.y - 0.5, 1.4, 1.4);
+  }
+
+  drawSpiderBody(ctx, body, t, st.reduced, { spider: st.spider, accent: st.accent }, { scale: st.scale });
+
+  // 角标
+  ctx.fillStyle = '#9998a0';
+  ctx.font = '11px Consolas, monospace';
+  ctx.fillText(`${(st.scale).toFixed(1)}×   ${st.reduced ? 'REDUCED MOTION' : 'FULL MOTION'}   ${st.paused ? 'PAUSED' : 'RUNNING'}`, 16, h - 16);
+  const beat = heartbeatAt(t, st.reduced);
+  ctx.fillText(`core ${beat.size.toFixed(1)}px  glow ${beat.glow.toFixed(1)}  beat ${beat.beat.toFixed(2)}`, 16, h - 34);
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

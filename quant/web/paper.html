@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>模拟盘 · Paper Trading</title>
+<style>
+  :root{
+    --bg:#080909;--panel:#0e0e11;--panel2:#131317;--border:#24242a;
+    --text:#e8e8e9;--muted:#8b8b94;--accent:#f23c83;
+    --up:#ef4b5e;--down:#3fbf8f;--warn:#f4cf4d;--ok:#48d6a4;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font:12px/1.6 Consolas,"Cascadia Code",ui-monospace,monospace}
+  a{color:var(--accent);text-decoration:none}
+  #top{display:flex;align-items:center;gap:12px;padding:11px 16px;
+    border-bottom:1px solid var(--border);background:var(--panel);flex-wrap:wrap}
+  #top h1{margin:0;font-size:13px;letter-spacing:.16em;font-weight:400}
+  .sub{color:var(--accent);font-size:10px;letter-spacing:.12em}
+  select,input,button{background:#191a1e;color:var(--text);border:1px solid var(--border);
+    padding:5px 8px;font:inherit;font-size:11px;border-radius:3px}
+  input[type=number]{width:110px}
+  button{cursor:pointer}
+  button:hover:not(:disabled){border-color:var(--accent)}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.buy{background:var(--up);border-color:var(--up);color:#fff;font-weight:700}
+  button.sell{background:var(--down);border-color:var(--down);color:#fff;font-weight:700}
+  button.on{background:var(--ok);border-color:var(--ok);color:#04221a}
+  .spacer{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:10px;
+    border:1px solid var(--border);font-size:10px;color:var(--muted)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+  .dot.err{background:var(--up)}
+  .dot.idle{background:var(--muted)}
+  #wrap{padding:13px 16px 50px;display:grid;gap:13px;grid-template-columns:370px 1fr}
+  @media (max-width:1150px){#wrap{grid-template-columns:1fr}}
+  .col{display:grid;gap:13px;align-content:start}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px}
+  .card>h2{margin:0;padding:8px 12px;font-size:11px;font-weight:400;color:var(--muted);
+    letter-spacing:.08em;border-bottom:1px solid var(--border);display:flex;
+    justify-content:space-between;align-items:center;gap:8px}
+  .card .body{padding:11px 12px}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #17171c;white-space:nowrap}
+  th{color:var(--muted);font-weight:400;font-size:10px}
+  th:first-child,td:first-child{text-align:left}
+  .mut{color:var(--muted)} .up{color:var(--up)} .dn{color:var(--down)} .wn{color:var(--warn)}
+  .big{font-size:26px;line-height:1.15}
+  .kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:11px}
+  .kv .k{color:var(--muted)}
+  .kv .v{text-align:right}
+  .row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+  .row.tight{gap:5px}
+  label.f{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--muted)}
+  canvas{display:block;width:100%}
+  .sess{display:flex;justify-content:space-between;align-items:center;gap:8px;
+    padding:7px 9px;border-bottom:1px solid #17171c;cursor:pointer}
+  .sess:hover{background:#141419}
+  .sess.cur{background:#17171c;border-left:2px solid var(--accent)}
+  .sess .nm{font-size:11px}
+  .sess .meta{color:var(--muted);font-size:10px}
+  .tabs{display:flex;gap:0;border-bottom:1px solid var(--border)}
+  .tabs button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;
+    padding:7px 13px;font-size:11px;color:var(--muted)}
+  .tabs button.act{color:var(--text);border-bottom-color:var(--accent)}
+  .scroll{max-height:280px;overflow:auto}
+  .note{color:var(--muted);font-size:10px;line-height:1.75;padding:8px 10px;
+    background:#0b0b0e;border-left:2px solid var(--warn);margin-top:9px}
+  .note b{color:var(--warn)}
+  #err{display:none;margin:0 16px;padding:9px 12px;border:1px solid var(--up);
+    border-radius:4px;color:var(--up);background:#1a0d13;font-size:11px;white-space:pre-wrap}
+  .toast{position:fixed;right:16px;bottom:16px;background:var(--panel2);
+    border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:4px;
+    padding:10px 14px;font-size:11px;max-width:460px;z-index:99;display:none}
+  #empty{color:var(--muted);padding:26px 8px;text-align:center;line-height:2}
+
+  /* 标的选择器：A 股 8265 只、加密 511 对，塞进 <select> 会卡死浏览器，
+     所以常用项做成快捷标签，其余走搜索。 */
+  .results{max-height:190px;overflow:auto;margin-top:8px;display:none}
+  .results.on{display:block}
+  .results .it{display:flex;justify-content:space-between;gap:8px;padding:5px 8px;
+    border:1px solid transparent;border-bottom:1px solid #17171c;cursor:pointer;font-size:11px}
+  .results .it:hover{background:#17171c;border-color:var(--border)}
+  .results .it b{font-weight:400}
+  .results .it .px{color:var(--muted);font-size:10px;white-space:nowrap}
+  .results .it .px i{font-style:normal}
+  .picked{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+  .chip{padding:3px 8px;border:1px solid var(--border);border-radius:10px;
+    font-size:10px;color:var(--muted);cursor:pointer}
+  .chip:hover{border-color:var(--accent);color:var(--text)}
+  .chip.cur{border-color:var(--accent);color:var(--text);background:#1a0d13}
+  .selinfo{margin-top:7px;font-size:10px;color:var(--muted)}
+  .selinfo b{color:var(--text);font-weight:400}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <h1>PAPER TRADING</h1>
+  <div class="sub">模拟盘 · 纸上交易</div>
+  <span class="pill"><span class="dot idle" id="dot"></span><span id="status">未选择账户</span></span>
+  <span class="spacer"></span>
+  <a href="/">量化看板</a>
+  <a href="/spider-viewer.html" target="_blank">美术查看器</a>
+</div>
+<div id="err"></div>
+
+<div id="wrap">
+  <!-- ══════════ 左列 ══════════ -->
+  <div class="col">
+
+    <!-- 新建 -->
+    <div class="card">
+      <h2>新建模拟账户</h2>
+      <div class="body">
+        <div class="row">
+          <label class="f">市场<select id="mkt"></select></label>
+          <label class="f" style="flex:1;min-width:190px">
+            标的
+            <input id="symSearch" type="search" placeholder="输入代码或名称搜索…" autocomplete="off">
+          </label>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <label class="f">粒度<select id="iv"></select></label>
+          <label class="f">初始资金<input type="number" id="init" step="10000"></label>
+          <button id="create" class="primary" style="margin-top:15px">创建并开始</button>
+        </div>
+        <div id="symResults" class="results"></div>
+        <div id="symPicked" class="picked"></div>
+        <div class="note" id="mkNote">选择市场后显示交易规则</div>
+      </div>
+    </div>
+
+    <!-- 账户列表 -->
+    <div class="card">
+      <h2><span>我的模拟账户</span><span class="mut" id="sessCount"></span></h2>
+      <div class="body" style="padding:0">
+        <div id="sessions"><div id="empty">还没有账户。<br>上面创建一个开始。</div></div>
+      </div>
+    </div>
+
+    <!-- 下单 -->
+    <div class="card">
+      <h2><span>下单</span><span class="mut" id="orderHint">—</span></h2>
+      <div class="body">
+        <div class="row">
+          <label class="f">方向
+            <select id="side"><option value="buy">买入</option><option value="sell">卖出</option></select>
+          </label>
+          <label class="f">类型
+            <select id="otype">
+              <option value="next_open">下一根开盘（推荐）</option>
+              <option value="market">立即市价</option>
+            </select>
+          </label>
+          <label class="f">数量<input type="number" id="qty" step="1" placeholder="留空=全仓/全平"></label>
+        </div>
+        <div class="row tight" style="margin-top:7px">
+          <button id="qAll">全部可用</button>
+          <button id="qHalf">一半</button>
+          <button id="qLot">1 手</button>
+          <button id="qPos">全部持仓</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="doBuy" class="buy">买入 / 做多</button>
+          <button id="doSell" class="sell">卖出 / 平仓</button>
+          <button id="doCancel">撤单</button>
+        </div>
+        <div class="note" id="orderNote">
+          <b>下一根开盘</b>：下单后等下一根 K 线开盘成交 —— 与回测口径一致，<b>没有未来函数</b>。<br>
+          <b>立即市价</b>：按当前价立刻成交。如果你看着已确定的收盘价下单，
+          等于用了当时拿不到的信息（同一根内的前视），所以默认不用它。
+        </div>
+      </div>
+    </div>
+
+    <!-- 自动交易 -->
+    <div class="card">
+      <h2><span>自动交易</span><span class="mut" id="autoState">关闭</span></h2>
+      <div class="body">
+        <div class="row">
+          <label class="f" style="flex:1">决策模式
+            <select id="autoMode">
+              <option value="score">多因子打分（推荐）</option>
+              <option value="confirm">多策略共识</option>
+              <option value="signal">单策略（最简）</option>
+              <option value="ai">外部 AI 决策</option>
+            </select>
+          </label>
+          <button id="autoBtn" style="margin-top:15px">启用</button>
+        </div>
+
+        <!-- 单策略 / 共识模式才用到的策略选择 -->
+        <div class="row" id="rowStrategy" style="margin-top:8px;display:none">
+          <label class="f" style="flex:1">策略<select id="strategy"></select></label>
+          <label class="f" id="wrapConfirm" style="display:none">共识数
+            <input type="number" id="confirmMin" min="1" max="5" step="1" style="width:64px">
+          </label>
+        </div>
+
+        <!-- 打分模式：阈值 -->
+        <div id="rowScore" style="margin-top:8px">
+          <div class="row">
+            <label class="f">开仓阈值<input type="number" id="entryTh" step="0.05" min="0.05" max="1"></label>
+            <label class="f">平仓阈值<input type="number" id="exitTh" step="0.05" min="-1" max="-0.05"></label>
+            <label class="f">仓位方式
+              <select id="sizing">
+                <option value="fixed">固定比例</option>
+                <option value="score">随信心变化</option>
+                <option value="volatility">按波动率</option>
+              </select>
+            </label>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <label class="f">仓位比例<input type="number" id="fixedFrac" step="0.05" min="0.05" max="1"></label>
+            <label class="f">分档阈值<input type="number" id="band" step="0.05" min="0.01" max="0.5"></label>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <button id="btnDecide" title="不改行情，只跑一次决策逻辑，看它会怎么判断">试算一次决策</button>
+          <button id="btnRisk" title="展开/收起风控参数">风控参数</button>
+        </div>
+
+        <div id="riskBox" style="display:none;margin-top:8px">
+          <div class="row">
+            <label class="f">止损<input type="number" id="rStop" step="0.01" min="0" max="0.9"></label>
+            <label class="f">止盈<input type="number" id="rTake" step="0.01" min="0" max="5"></label>
+            <label class="f">移动止损<input type="number" id="rTrail" step="0.01" min="0" max="0.9"></label>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <label class="f">回撤熔断<input type="number" id="rDD" step="0.01" min="0" max="0.9"></label>
+            <label class="f">冷却根数<input type="number" id="rCool" step="1" min="0" max="50" style="width:70px"></label>
+            <label class="f">最短持有<input type="number" id="rHold" step="1" min="0" max="50" style="width:70px"></label>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button id="btnSaveRisk" class="primary">保存风控</button>
+            <button id="btnClearRisk">全部关闭</button>
+          </div>
+        </div>
+
+        <div class="note" id="autoNote">
+          <b>三层逻辑</b>：信号 → 仓位 → 风控。<br>
+          <b>风控优先于信号</b> —— 触发止损就卖，不管信号说什么。<br>
+          点「试算一次决策」可以不改任何东西，先看它会怎么判断。
+        </div>
+      </div>
+    </div>
+
+    <!-- 决策解释 -->
+    <div class="card">
+      <h2><span>决策解释</span><span class="mut" id="decMeta">—</span></h2>
+      <div class="body" id="decBox">
+        <div class="mut" style="padding:14px 0;text-align:center">
+          点「试算一次决策」或开启自动交易后，这里显示它为什么这么判断
+        </div>
+      </div>
+    </div>
+
+    <!-- 行情 -->
+    <div class="card">
+      <h2>行情推进</h2>
+      <div class="body">
+        <div class="row">
+          <button id="refresh" class="primary">刷新行情</button>
+          <label class="f" style="margin-left:auto">自动刷新
+            <select id="autoPull">
+              <option value="0">关闭</option>
+              <option value="30000">30 秒</option>
+              <option value="60000" selected>1 分钟</option>
+              <option value="300000">5 分钟</option>
+            </select>
+          </label>
+        </div>
+        <div class="note" style="border-left-color:var(--ok)">
+          每次刷新都会拉<b style="color:var(--ok)">真实行情</b>，
+          新出现的 K 线会触发挂单成交并更新权益。账户状态存在本地 JSON，重启不丢。
+        </div>
+        <div class="row" style="margin-top:9px">
+          <button id="reset">重置账户</button>
+          <button id="del">删除账户</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ 右列 ══════════ -->
+  <div class="col">
+
+    <!-- 账户总览 -->
+    <div class="card">
+      <h2><span>账户总览</span><span class="mut" id="accMeta">—</span></h2>
+      <div class="body">
+        <div class="row" style="align-items:flex-end;gap:26px">
+          <div>
+            <div class="mut" style="font-size:10px">总权益</div>
+            <div class="big" id="equity">—</div>
+            <div id="ret" class="mut">—</div>
+          </div>
+          <div class="kv" id="kv1" style="flex:1;min-width:210px"></div>
+          <div class="kv" id="kv2" style="flex:1;min-width:210px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 图表 -->
+    <div class="card">
+      <h2><span>权益曲线 / 价格</span><span class="mut" id="chartInfo"></span></h2>
+      <div class="body">
+        <canvas id="cvEq" height="150"></canvas>
+        <div class="mut" style="font-size:10px;margin-top:4px">
+          <span style="color:var(--ok)">■</span> 权益 &nbsp;
+          <span style="color:var(--muted)">■</span> 价格 &nbsp;
+          <span style="color:var(--up)">▲</span> 买入成交 &nbsp;
+          <span style="color:var(--down)">▼</span> 卖出成交
+        </div>
+      </div>
+    </div>
+
+    <!-- 明细 -->
+    <div class="card">
+      <h2>明细</h2>
+      <div class="tabs">
+        <button data-tab="pending" class="act">待成交</button>
+        <button data-tab="fills">成交记录</button>
+        <button data-tab="orders">全部委托</button>
+        <button data-tab="logs">运行日志</button>
+      </div>
+      <div class="body scroll" id="detail" style="padding:0 12px 12px">
+        <div class="mut" style="padding:20px 0;text-align:center">选择账户后显示</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const API = '/api/paper';
+let META = null, CUR = null, pullTimer = null, TAB = 'pending';
+
+// ---------- 工具 ----------
+const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v))
+  ? '—' : Number(v).toLocaleString('zh-CN', { minimumFractionDigits: d, maximumFractionDigits: d });
+const pct = (v, d = 2) => (v === null || v === undefined) ? '—' : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + '%';
+const cls = v => (v === null || v === undefined) ? 'mut' : (v > 0 ? 'up' : v < 0 ? 'dn' : 'mut');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+
+function toast(msg, ms = 3600) {
+  const t = $('toast'); t.textContent = msg; t.style.display = 'block';
+  clearTimeout(t._h); t._h = setTimeout(() => { t.style.display = 'none'; }, ms);
+}
+function fail(msg) {
+  const e = $('err'); e.style.display = 'block'; e.textContent = msg;
+  $('status').textContent = '出错'; $('dot').className = 'dot err';
+}
+function clearErr() { $('err').style.display = 'none'; }
+function setStatus(text, kind = 'ok') {
+  $('status').textContent = text;
+  $('dot').className = 'dot' + (kind === 'err' ? ' err' : kind === 'idle' ? ' idle' : '');
+}
+
+// ---------- API ----------
+async function api(method, path, body) {
+  const r = await fetch(API + path, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+  if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+/** 标的接口不在 /api/paper 下面，单独走一条 */
+async function symApi(path) {
+  const r = await fetch('/api' + path);
+  const data = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+  if (!r.ok || data.error) throw new Error(data.error || `HTTP ${r.status}`);
+  return data;
+}
+
+// ---------- 初始化 ----------
+async function boot() {
+  try {
+    META = await api('GET', '/meta');
+  } catch (e) { return fail('无法读取模拟盘元信息：' + e.message); }
+
+  $('mkt').innerHTML = Object.entries(META.markets)
+    .map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
+  $('strategy').innerHTML = Object.entries(META.strategies)
+    .map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+
+  $('mkt').onchange = () => {
+    PICKED = null;
+    fillIntervals(); fillInitial(); renderSymbols();
+  };
+  fillIntervals(); fillInitial(); renderSymbols();
+  $('symSearch').oninput = onSearchInput;
+  // 点空白处收起搜索结果
+  document.addEventListener('pointerdown', e => {
+    if (!$('symResults').contains(e.target) && e.target !== $('symSearch')) {
+      $('symResults').classList.remove('on');
+    }
+  });
+
+  $('create').onclick = createSession;
+  $('refresh').onclick = () => doRefresh();
+  $('autoPull').onchange = e => setAutoPull(Number(e.target.value));
+  $('reset').onclick = () => act('reset', {}, '账户已重置');
+  $('del').onclick = deleteSession;
+  $('doBuy').onclick = () => placeOrder('buy');
+  $('doSell').onclick = () => placeOrder('sell');
+  $('doCancel').onclick = () => act('cancel', {}, '已撤单');
+  $('autoBtn').onclick = toggleAuto;
+  $('btnDecide').onclick = tryDecide;
+  $('btnRisk').onclick = () => {
+    const b = $('riskBox');
+    b.style.display = b.style.display === 'none' ? 'block' : 'none';
+  };
+  $('btnSaveRisk').onclick = saveRisk;
+  $('btnClearRisk').onclick = () => {
+    // 空字符串 = 关闭该项风控（传 null 给后端）
+    ['rStop', 'rTake', 'rTrail', 'rDD'].forEach(id => { $(id).value = ''; });
+    saveRisk(true);
+  };
+  $('autoMode').onchange = syncAutoRows;
+  $('qAll').onclick = () => quickQty('all');
+  $('qHalf').onclick = () => quickQty('half');
+  $('qLot').onclick = () => quickQty('lot');
+  $('qPos').onclick = () => quickQty('pos');
+
+  document.querySelectorAll('.tabs button').forEach(b => {
+    b.onclick = () => {
+      document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('act', x === b));
+      TAB = b.dataset.tab; renderDetail();
+    };
+  });
+
+  addEventListener('resize', () => { if (CUR) drawChart(CUR); });
+  addEventListener('hashchange', () => {
+    const id = location.hash.slice(1);
+    if (id && (!CUR || CUR.id !== id)) selectSession(id);
+  });
+  syncAutoRows();            // 初始化自动交易面板的显示状态
+  await loadSessions();
+  // 支持直接打开某个账户：/paper.html#<sessionId>
+  const hash = location.hash.slice(1);
+  if (hash) await selectSession(hash);
+}
+
+function fillIntervals() {
+  const m = META.markets[$('mkt').value];
+  $('iv').innerHTML = m.intervals.map(i => `<option value="${i}">${i}</option>`).join('');
+  $('iv').value = m.defaultInterval;
+}
+
+// ---------- 标的选择 ----------
+// A 股 8265 只、加密 511 对。全塞进 <select> 会卡死浏览器（实测 DOM 里放
+// 几千个 option 后打开下拉要好几秒），所以：
+//   常用项 -> 快捷标签，点一下就选
+//   其它   -> 搜索框，输代码或中文名，去后端查
+let PICKED = null;          // {value, name}
+
+function renderSymbols() {
+  const m = META.markets[$('mkt').value];
+  const set = m.symbolSets || { popular: [], total: 0 };
+  $('symPicked').innerHTML =
+    set.popular.map(p => `<span class="chip ${PICKED && PICKED.value === p.value ? 'cur' : ''}"
+        data-v="${p.value}" data-n="${esc(p.name)}">${esc(p.name)}</span>`).join('')
+    + (set.total > set.popular.length
+        ? `<span class="chip" data-more="1">…共 ${set.total} 个，可搜索</span>` : '');
+  $('symPicked').querySelectorAll('.chip').forEach(c => {
+    c.onclick = () => {
+      if (c.dataset.more) { $('symSearch').focus(); return; }
+      pickSymbol(c.dataset.v, c.dataset.n);
+    };
+  });
+  if (!PICKED || !set.popular.some(p => p.value === PICKED.value)) {
+    // 默认选市场的默认标的
+    const def = set.popular.find(p => p.value === m.defaultSymbol) || set.popular[0];
+    if (def) pickSymbol(def.value, def.name);
+  } else {
+    renderPicked();
+  }
+}
+
+function pickSymbol(value, name) {
+  PICKED = { value, name };
+  $('symSearch').value = '';
+  $('symResults').classList.remove('on');
+  renderSymbols();
+}
+
+function renderPicked() {
+  $('symPicked').querySelectorAll('.chip').forEach(c => {
+    c.classList.toggle('cur', c.dataset.v === PICKED?.value);
+  });
+  const m = META.markets[$('mkt').value];
+  $('selinfo')?.remove();
+  const d = document.createElement('div');
+  d.className = 'selinfo'; d.id = 'selinfo';
+  d.innerHTML = `已选：<b>${esc(PICKED?.name || '—')}</b> <span class="mut">(${esc(PICKED?.value || '')})</span>`;
+  $('symPicked').after(d);
+}
+
+let searchTimer = null;
+function onSearchInput() {
+  clearTimeout(searchTimer);
+  const q = $('symSearch').value.trim();
+  if (!q) { $('symResults').classList.remove('on'); return; }
+  searchTimer = setTimeout(async () => {
+    const market = $('mkt').value;
+    try {
+      const d = await symApi(`/symbols/search?market=${market}&q=${encodeURIComponent(q)}&limit=40`);
+      const rs = d.results || [];
+      $('symResults').innerHTML = rs.length
+        ? rs.map(r => `<div class="it" data-v="${esc(r.value)}" data-n="${esc(r.name)}">
+            <b>${esc(r.name)}</b>
+            <span class="px">${esc(r.code)}${r.price ? ` · <i>${r.price}</i>` : ''}${
+              r.changePct != null ? ` <i class="${r.changePct >= 0 ? 'up' : 'dn'}">${r.changePct >= 0 ? '+' : ''}${r.changePct}%</i>` : ''}</span>
+          </div>`).join('')
+        : `<div class="it" style="cursor:default"><span class="mut">没有匹配「${esc(q)}」的标的</span></div>`;
+      $('symResults').classList.add('on');
+      $('symResults').querySelectorAll('.it[data-v]').forEach(el => {
+        el.onclick = () => pickSymbol(el.dataset.v, el.dataset.n);
+      });
+    } catch (e) {
+      $('symResults').innerHTML = `<div class="it" style="cursor:default"><span class="neg">搜索失败：${esc(e.message)}</span></div>`;
+      $('symResults').classList.add('on');
+    }
+  }, 220);
+}
+function fillInitial() {
+  const m = META.markets[$('mkt').value];
+  $('init').value = m.defaultInitial;
+  $('mkNote').innerHTML =
+    `交易规则：<b style="color:var(--ok)">${m.lot > 1 ? `必须整手（${m.lot} 股）` : '可小数下单'}</b>` +
+    `${m.tPlus1 ? ' · <b style="color:var(--warn)">T+1（当日买入不可当日卖出）</b>' : ''}` +
+    ` · 手续费 ${(m.commission * 100).toFixed(3)}% · 滑点 ${(m.slippage * 100).toFixed(3)}%`;
+}
+
+// ---------- 会话 ----------
+async function loadSessions() {
+  try {
+    const d = await api('GET', '/sessions');
+    const list = d.sessions || [];
+    $('sessCount').textContent = `${list.length} / ${d.maxSessions}`;
+    if (!list.length) {
+      $('sessions').innerHTML = '<div id="empty">还没有账户。<br>上面创建一个开始。</div>';
+      return;
+    }
+    $('sessions').innerHTML = list.map(s => `
+      <div class="sess ${CUR && s.id === CUR.id ? 'cur' : ''}" data-id="${s.id}">
+        <div>
+          <div class="nm">${esc(s.name || s.symbol)} ${s.interval}
+            ${s.auto ? '<span class="wn">· 自动</span>' : ''}</div>
+          <div class="meta">${s.inPosition ? '<span class="up">持仓中</span>' : '空仓'} ·
+            ${s.barIndex + 1} 根 · ${esc(s.updatedAt)}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="${cls(s.totalReturn)}">${pct(s.totalReturn)}</div>
+          <div class="meta">${fmt(s.equity, 0)}</div>
+        </div>
+      </div>`).join('');
+    document.querySelectorAll('.sess').forEach(el => {
+      el.onclick = () => selectSession(el.dataset.id);
+    });
+    if (CUR && !list.find(s => s.id === CUR.id)) CUR = null;
+  } catch (e) { fail('读取账户列表失败：' + e.message); }
+}
+
+async function selectSession(id) {
+  try {
+    clearErr();
+    const d = await api('GET', '/' + id);
+    CUR = d.session;
+    if (CUR.strategy) $('strategy').value = CUR.strategy;
+    setStatus(`${CUR.source || '—'} · ${CUR.barAt || '—'}`);
+    // 把会话写进 URL hash，便于收藏/直接打开某个账户
+    if (location.hash.slice(1) !== id) history.replaceState(null, '', '#' + id);
+    renderAll();
+    loadSessions();
+  } catch (e) { fail('读取账户失败：' + e.message); }
+}
+
+async function createSession() {
+  if (!PICKED) return toast('先选一个标的');
+  $('create').disabled = true;
+  setStatus('正在拉真实行情…', 'idle');
+  try {
+    clearErr();
+    const d = await api('POST', '/create', {
+      market: $('mkt').value, symbol: PICKED.value, interval: $('iv').value,
+      initial: Number($('init').value) || undefined,
+    });
+    CUR = d.session;
+    setStatus(`${CUR.source} · ${CUR.barAt}`);
+    toast(`账户已创建：${CUR.name} 初始 ${fmt(CUR.initial, 0)}，当前价 ${fmt(CUR.price)}`);
+    renderAll(); loadSessions();
+  } catch (e) { fail('创建失败：' + e.message); }
+  finally { $('create').disabled = false; }
+}
+
+async function doRefresh(silent = false) {
+  if (!CUR) return;
+  try {
+    clearErr();
+    const d = await api('POST', `/${CUR.id}/refresh`, {});
+    CUR = d.session;
+    const adv = d.market.advancedBars;
+    setStatus(`${CUR.source} · ${CUR.barAt}`);
+    if (!silent) toast(adv > 0 ? `新增 ${adv} 根 K 线，已触发挂单成交` : '暂无新 K 线（已是最新）');
+    renderAll(); loadSessions();
+  } catch (e) { fail('刷新失败：' + e.message); }
+}
+
+async function placeOrder(side) {
+  if (!CUR) return toast('先创建一个账户');
+  const raw = $('qty').value.trim();
+  const body = { side, type: $('otype').value, reason: '手动下单' };
+  if (raw !== '') body.qty = Number(raw);
+  try {
+    clearErr();
+    const d = await api('POST', `/${CUR.id}/order`, body);
+    const o = d.order;
+    CUR = d.session;
+    if (o.state === 'filled') toast(`成交：${o.side === 'buy' ? '买入' : '卖出'} ${fmt(o.qty, 0)} @ ${fmt(o.fillPrice)}，手续费 ${fmt(o.fee)}`);
+    else if (o.state === 'pending') toast(`挂单已提交：${fmt(o.qty, 0)} 股，将在下一根开盘成交`);
+    else toast(`下单被拒：${o.rejectReason || '未知原因'}`);
+    $('qty').value = '';
+    renderAll(); loadSessions();
+  } catch (e) { fail('下单失败：' + e.message); }
+}
+
+async function act(action, body, okMsg) {
+  if (!CUR) return;
+  try {
+    clearErr();
+    const d = await api('POST', `/${CUR.id}/${action}`, body);
+    if (d.session) CUR = d.session;
+    if (okMsg) toast(okMsg);
+    renderAll(); loadSessions();
+  } catch (e) { fail(`${action} 失败：` + e.message); }
+}
+
+async function toggleAuto() {
+  if (!CUR) return toast('先创建一个账户');
+  const on = !CUR.auto;
+  try {
+    clearErr();
+    const cfg = collectAutoConfig();
+    await api('POST', `/${CUR.id}/auto`, {
+      on, mode: $('autoMode').value, strategy: $('strategy').value, config: cfg,
+    });
+    toast(on ? `自动交易已启用（${$('autoMode').selectedOptions[0].text}）`
+             : '自动交易已关闭');
+    await selectSession(CUR.id);
+  } catch (e) { fail('切换自动交易失败：' + e.message); }
+}
+
+// ---------- 自动交易配置 ----------
+function syncAutoRows() {
+  const m = $('autoMode').value;
+  $('rowStrategy').style.display = (m === 'signal' || m === 'confirm') ? 'flex' : 'none';
+  $('wrapConfirm').style.display = m === 'confirm' ? 'flex' : 'none';
+  $('rowScore').style.display = m === 'score' ? 'block' : 'none';
+  $('autoNote').innerHTML = {
+    score: '<b>多因子打分</b>：6 个因子（趋势/动能/强度/超买超卖/通道位置/量能）加权求和，'
+         + '权重随市场状态（ADX 判定的趋势市 vs 震荡市）自适应。<br>'
+         + '总分 ≥ 开仓阈值就买、≤ 平仓阈值就卖，中间观望。<br>'
+         + '<b>风控优先于信号</b>：触发止损/止盈/移动止损/回撤熔断时强制平仓，不看分数。',
+    confirm: '<b>多策略共识</b>：5 个策略各自投票，至少 N 个同向才动手。<br>'
+           + '比单策略稳，但信号更少、更滞后。',
+    signal: '<b>单策略</b>：只用选定的那一个策略，信号转多买入、转空卖出。<br>'
+          + '和最早的版本一致，可用来对照其他模式的效果。',
+    ai: '<b>外部 AI 决策</b>：把市场快照（20 项指标 + 账户状态）交给外部模型，'
+      + '由它给出买卖与仓位。<br>'
+      + '需要先配好端点，见 <b>quant/autotrader.py</b> 里 AIDecider 的说明。<br>'
+      + '<b>风控仍在本地判定</b>，AI 的输出会被夹到仓位上限内 —— '
+      + '一个胡说的模型不能把账户打爆。',
+  }[m];
+}
+
+function collectAutoConfig() {
+  const num = (id, dflt) => {
+    const v = $(id).value.trim();
+    if (v === '') return dflt;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : dflt;
+  };
+  const cfg = {
+    entry_threshold: num('entryTh', 0.25),
+    exit_threshold: num('exitTh', -0.25),
+    sizing: $('sizing').value,
+    fixed_fraction: num('fixedFrac', 0.95),
+    rebalance_band: num('band', 0.15),
+    confirm_min: Math.max(1, Math.round(num('confirmMin', 2))),
+    risk: {
+      stop_loss: $('rStop').value === '' ? null : num('rStop', 0.06),
+      take_profit: $('rTake').value === '' ? null : num('rTake', 0.20),
+      trailing_stop: $('rTrail').value === '' ? null : num('rTrail', 0.08),
+      max_drawdown: $('rDD').value === '' ? null : num('rDD', 0.25),
+      cooldown_bars: Math.max(0, Math.round(num('rCool', 3))),
+      min_hold_bars: Math.max(0, Math.round(num('rHold', 0))),
+    },
+  };
+  return cfg;
+}
+
+/** 把会话里的配置回填到表单 */
+function applyAutoConfig(c) {
+  if (!c) return;
+  $('autoMode').value = c.mode || 'score';
+  if (c.strategy) $('strategy').value = c.strategy;
+  $('entryTh').value = c.entry_threshold ?? 0.25;
+  $('exitTh').value = c.exit_threshold ?? -0.25;
+  $('sizing').value = c.sizing || 'fixed';
+  $('fixedFrac').value = c.fixed_fraction ?? 0.95;
+  $('band').value = c.rebalance_band ?? 0.15;
+  $('confirmMin').value = c.confirm_min ?? 2;
+  const r = c.risk || {};
+  const set = (id, v) => { $(id).value = (v === null || v === undefined) ? '' : v; };
+  set('rStop', r.stop_loss); set('rTake', r.take_profit);
+  set('rTrail', r.trailing_stop); set('rDD', r.max_drawdown);
+  set('rCool', r.cooldown_bars ?? 3); set('rHold', r.min_hold_bars ?? 0);
+  syncAutoRows();
+}
+
+async function saveRisk(silent) {
+  if (!CUR) return toast('先创建一个账户');
+  try {
+    clearErr();
+    await api('POST', `/${CUR.id}/risk`, { config: collectAutoConfig().risk });
+    if (!silent) toast('风控参数已保存');
+    await selectSession(CUR.id);
+  } catch (e) { fail('保存风控失败：' + e.message); }
+}
+
+/** 试算一次决策：不改任何东西，先看它会怎么判断 */
+async function tryDecide() {
+  if (!CUR) return toast('先创建一个账户');
+  $('btnDecide').disabled = true;
+  $('decMeta').textContent = '计算中…';
+  try {
+    clearErr();
+    // 先把当前表单配置提交上去，这样试算反映的是用户刚填的参数
+    await api('POST', `/${CUR.id}/auto`, {
+      on: CUR.auto, mode: $('autoMode').value,
+      strategy: $('strategy').value, config: collectAutoConfig(),
+    });
+    const d = await api('POST', `/${CUR.id}/decide`, {});
+    CUR = d.session;
+    renderAll(); loadSessions();
+    renderDecision(d.decision, CUR.lastDecisionAt);
+  } catch (e) {
+    $('decMeta').textContent = '失败';
+    fail('试算失败：' + e.message);
+  } finally { $('btnDecide').disabled = false; }
+}
+
+function renderDecision(dec, at) {
+  const el = $('decBox');
+  if (!dec) {
+    $('decMeta').textContent = '无决策';
+    el.innerHTML = '<div class="mut">没有产出决策（可能是自动交易未启用，或行情不足）</div>';
+    return;
+  }
+  const act = { buy: '买入', sell: '卖出', hold: '不动' }[dec.action] || dec.action;
+  const actCls = dec.action === 'buy' ? 'up' : dec.action === 'sell' ? 'dn' : 'mut';
+  $('decMeta').textContent =
+    `模式 ${dec.mode || '—'}${at ? ' · ' + esc(at) : ''}`;
+
+  const factors = Object.entries(dec.factors || {});
+  const FL = { trend: '趋势', momentum: '动能', strength: '强度',
+               reversion: '超买超卖', position: '通道位置', volume: '量能' };
+  let html = `
+    <div class="row" style="align-items:center;gap:14px">
+      <div><div class="mut" style="font-size:10px">本次决策</div>
+        <div style="font-size:19px" class="${actCls}">${act}</div></div>
+      <div><div class="mut" style="font-size:10px">打分</div>
+        <div style="font-size:19px" class="${cls(dec.score)}">${dec.score > 0 ? '+' : ''}${fmt(dec.score, 3)}</div></div>
+      <div><div class="mut" style="font-size:10px">目标仓位</div>
+        <div style="font-size:19px">${fmt(dec.target * 100, 0)}%</div></div>
+      <div><div class="mut" style="font-size:10px">当前仓位</div>
+        <div style="font-size:19px">${fmt(dec.current * 100, 0)}%</div></div>
+    </div>`;
+
+  if (dec.riskHit) {
+    html += `<div class="note" style="border-left-color:var(--up);margin-top:10px">
+      <b style="color:var(--up)">风控触发</b>：${esc(dec.riskHit)}
+      —— 风控优先于信号，不看打分直接执行。</div>`;
+  }
+
+  if (factors.length) {
+    html += '<div style="margin-top:11px"><div class="mut" style="font-size:10px;margin-bottom:5px">因子明细（正=看多，负=看空）</div>';
+    for (const [k, v] of factors.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))) {
+      const w = Math.abs(v) * 50;
+      html += `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:11px">
+        <span style="min-width:62px" class="mut">${FL[k] || esc(k)}</span>
+        <span style="flex:1;height:7px;background:#17171c;border-radius:3px;position:relative;overflow:hidden">
+          <span style="position:absolute;left:50%;top:0;bottom:0;width:${w}%;
+            background:${v >= 0 ? 'var(--down)' : 'var(--up)'};
+            ${v >= 0 ? 'margin-left:0' : 'margin-left:' + (-w) + '%'}"></span>
+        </span>
+        <span style="min-width:46px;text-align:right" class="${v > 0 ? 'dn' : v < 0 ? 'up' : 'mut'}">
+          ${v > 0 ? '+' : ''}${fmt(v, 2)}</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  if ((dec.reasons || []).length) {
+    html += '<div style="margin-top:11px"><div class="mut" style="font-size:10px;margin-bottom:4px">判断依据</div>';
+    html += dec.reasons.map(r => `<div style="padding:2px 0;font-size:11px">· ${esc(r)}</div>`).join('');
+    html += '</div>';
+  }
+
+  html += `<div class="note" style="margin-top:10px">
+    这只是<b>一次试算</b>，没有下单，也没有推进行情。真正的自动交易会在每次
+    「刷新行情」出现新 K 线时跑同样这套逻辑，并以<b>下一根开盘价</b>成交。</div>`;
+
+  el.innerHTML = html;
+}
+
+async function deleteSession() {
+  if (!CUR) return;
+  if (!confirm(`删除账户「${CUR.name} ${CUR.interval}」？成交与日志会一起删掉。`)) return;
+  try {
+    await api('DELETE', '/' + CUR.id);
+    CUR = null; toast('账户已删除');
+    setStatus('未选择账户', 'idle');
+    $('detail').innerHTML = '<div class="mut" style="padding:20px 0;text-align:center">选择账户后显示</div>';
+    renderAll(); loadSessions();
+  } catch (e) { fail('删除失败：' + e.message); }
+}
+
+function quickQty(kind) {
+  if (!CUR) return;
+  const m = META.markets[CUR.market];
+  const lot = m.lot;
+  let v = 0;
+  if (kind === 'pos') v = CUR.qty;
+  else if (kind === 'lot') v = lot;
+  else {
+    const budget = kind === 'half' ? CUR.cash / 2 : CUR.cash;
+    const px = CUR.price * (1 + m.slippage) * (1 + m.commission);
+    v = px > 0 ? Math.floor(budget / px / lot) * lot : 0;
+  }
+  $('qty').value = v;
+}
+
+function setAutoPull(ms) {
+  if (pullTimer) { clearInterval(pullTimer); pullTimer = null; }
+  if (!ms) return;
+  pullTimer = setInterval(() => { if (!document.hidden && CUR) doRefresh(true); }, ms);
+}
+
+// ---------- 渲染 ----------
+function renderAll() {
+  if (!CUR) {
+    $('equity').textContent = '—'; $('ret').textContent = '—';
+    $('kv1').innerHTML = ''; $('kv2').innerHTML = '';
+    ['doBuy','doSell','doCancel','refresh','reset','del','autoBtn'].forEach(i => $(i).disabled = true);
+    return;
+  }
+  const c = CUR;
+  ['doBuy','doSell','doCancel','refresh','reset','del','autoBtn'].forEach(i => $(i).disabled = false);
+
+  $('accMeta').textContent = `${c.name} ${c.symbol} · ${c.interval} · 源 ${c.source || '—'}`;
+  $('equity').textContent = fmt(c.equity, 2);
+  $('equity').className = 'big ' + cls(c.totalReturn);
+  $('ret').innerHTML = `<span class="${cls(c.totalReturn)}">${pct(c.totalReturn)}</span> ` +
+    `<span class="mut">· 初始 ${fmt(c.initial, 0)}</span>`;
+
+  $('kv1').innerHTML = [
+    ['可用现金', fmt(c.cash)],
+    ['持仓数量', c.qty ? fmt(c.qty, 0) : '空仓'],
+    ['持仓成本', c.qty ? fmt(c.avgPrice) : '—'],
+    ['持仓市值', fmt(c.positionValue)],
+    ['当前价', fmt(c.price)],
+  ].map(([k, v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join('');
+
+  $('kv2').innerHTML = [
+    ['浮动盈亏', `<span class="${cls(c.unrealized)}">${fmt(c.unrealized)}</span>`],
+    ['已实现盈亏', `<span class="${cls(c.realized)}">${fmt(c.realized)}</span>`],
+    ['累计手续费', fmt(c.fees)],
+    ['最大回撤', `<span class="dn">${fmt(c.maxDrawdown)}%</span>`],
+    ['完成交易', `${c.tradeCount} 笔 · 胜率 ${fmt(c.winRate, 1)}%`],
+  ].map(([k, v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join('');
+
+  $('orderHint').innerHTML = c.qty
+    ? `可卖 ${fmt(c.qty, 0)} · 可买约 ${fmt(Math.floor(c.cash / (c.price * 1.001) / META.markets[c.market].lot) * META.markets[c.market].lot, 0)}`
+    : `可买约 ${fmt(Math.floor(c.cash / (c.price * 1.001) / META.markets[c.market].lot) * META.markets[c.market].lot, 0)}`;
+
+  $('autoBtn').textContent = c.auto ? '关闭自动' : '启用自动';
+  $('autoBtn').classList.toggle('on', !!c.auto);
+  $('autoState').innerHTML = c.auto
+    ? `<span class="dn">运行中</span>${c.halted ? ' <span class="up">· 已熔断停手</span>' : ''}`
+    : '关闭';
+  applyAutoConfig(c.autoConfig);
+  // 打开页面就显示上次的决策，避免「决策解释」卡片永远是空的
+  if (c.lastDecision) renderDecision(c.lastDecision, c.lastDecisionAt);
+
+  $('chartInfo').textContent = `${c.barsTotal} 根 · ${c.barAt || '—'}`;
+  drawChart(c);
+  renderDetail();
+}
+
+function renderDetail() {
+  if (!CUR) return;
+  const c = CUR;
+  let html = '';
+  if (TAB === 'pending') {
+    const rows = c.pendingOrders || [];
+    html = rows.length ? `<table><thead><tr><th>方向</th><th>数量</th><th>类型</th><th>下单价</th><th>时间</th><th></th></tr></thead><tbody>` +
+      rows.map(o => `<tr><td class="${o.side === 'buy' ? 'up' : 'dn'}">${o.side === 'buy' ? '买入' : '卖出'}</td>
+        <td>${fmt(o.qty, 0)}</td><td class="mut">${o.type === 'market' ? '市价' : '次开'}</td>
+        <td>${fmt(o.created_price)}</td><td class="mut">${esc(o.created_at)}</td>
+        <td><button data-cancel="${o.id}" style="padding:1px 7px">撤</button></td></tr>`).join('') +
+      '</tbody></table>' : '<div class="mut" style="padding:20px 0;text-align:center">没有待成交委托</div>';
+  } else if (TAB === 'fills') {
+    const rows = [...(c.recentFills || [])].reverse();
+    html = rows.length ? `<table><thead><tr><th>时间</th><th>方向</th><th>数量</th><th>成交价</th><th>金额</th><th>手续费</th><th>已实现</th><th>来源</th></tr></thead><tbody>` +
+      rows.map(f => `<tr><td class="mut">${esc(f.at)}</td>
+        <td class="${f.side === 'buy' ? 'up' : 'dn'}">${f.side === 'buy' ? '买' : '卖'}</td>
+        <td>${fmt(f.qty, 0)}</td><td>${fmt(f.price)}</td><td>${fmt(f.notional, 0)}</td>
+        <td class="mut">${fmt(f.fee)}</td>
+        <td class="${cls(f.realized)}">${f.side === 'sell' ? fmt(f.realized) : '—'}</td>
+        <td class="mut">${f.source === 'auto' ? '自动' : '手动'}</td></tr>`).join('') +
+      '</tbody></table>' : '<div class="mut" style="padding:20px 0;text-align:center">还没有成交</div>';
+  } else if (TAB === 'orders') {
+    const rows = [...(c.recentOrders || [])].reverse();
+    const badge = s => s === 'filled' ? '<span class="dn">成交</span>' :
+      s === 'pending' ? '<span class="wn">挂单</span>' :
+      s === 'cancelled' ? '<span class="mut">已撤</span>' : '<span class="up">被拒</span>';
+    html = rows.length ? `<table><thead><tr><th>时间</th><th>方向</th><th>数量</th><th>状态</th><th>成交价</th><th>说明</th></tr></thead><tbody>` +
+      rows.map(o => `<tr><td class="mut">${esc(o.created_at)}</td>
+        <td class="${o.side === 'buy' ? 'up' : 'dn'}">${o.side === 'buy' ? '买' : '卖'}</td>
+        <td>${fmt(o.qty, 0)}</td><td>${badge(o.state)}</td>
+        <td>${o.fill_price ? fmt(o.fill_price) : '—'}</td>
+        <td class="mut">${esc(o.reject_reason || o.reason || '')}</td></tr>`).join('') +
+      '</tbody></table>' : '<div class="mut" style="padding:20px 0;text-align:center">还没有委托</div>';
+  } else {
+    const rows = [...(c.logs || [])].reverse();
+    const col = { fill: 'var(--ok)', order: 'var(--muted)', reject: 'var(--up)',
+                  cancel: 'var(--muted)', reset: 'var(--warn)', auto: 'var(--warn)' };
+    const zh = { fill:'成交', order:'委托', reject:'拒绝', cancel:'撤单', reset:'重置', auto:'自动' };
+    html = rows.length ? rows.map(l => `<div style="display:flex;gap:9px;padding:3px 0;border-bottom:1px solid #17171c">
+        <span class="mut" style="min-width:130px">${esc(l.at)}</span>
+        <span style="min-width:38px;color:${col[l.kind] || 'inherit'}">${zh[l.kind] || l.kind}</span>
+        <span>${esc(l.text)}</span></div>`).join('')
+      : '<div class="mut" style="padding:20px 0;text-align:center">暂无日志</div>';
+  }
+  $('detail').innerHTML = html;
+  document.querySelectorAll('[data-cancel]').forEach(b => {
+    b.onclick = async e => {
+      e.stopPropagation();
+      await act('cancel', { order: b.dataset.cancel }, '已撤单');
+    };
+  });
+}
+
+function drawChart(c) {
+  const cv = $('cvEq');
+  const dpr = Math.min(2, Math.max(1, devicePixelRatio || 1));
+  const w = cv.parentElement.clientWidth - 24, h = 150;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  const eq = c.equityCurve || [], px = c.prices || [];
+  if (!eq.length) {
+    ctx.fillStyle = '#8b8b94'; ctx.font = '11px Consolas, monospace';
+    ctx.fillText('暂无数据（刷新行情后生成）', 10, h / 2);
+    return;
+  }
+  const pad = { l: 8, r: 62, t: 8, b: 14 };
+  const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+
+  // 双轴：权益（左）与价格（右）各自归一化到画布高度
+  const eqs = eq.map(p => p.equity);
+  let eLo = Math.min(...eqs), eHi = Math.max(...eqs);
+  if (eHi === eLo) { eHi += 1; eLo -= 1; }
+  const ePad = (eHi - eLo) * 0.1; eLo -= ePad; eHi += ePad;
+
+  let pLo = Math.min(...px), pHi = Math.max(...px);
+  if (pHi === pLo) { pHi += 1; pLo -= 1; }
+
+  ctx.font = '10px Consolas, monospace';
+  ctx.strokeStyle = '#1b1b20'; ctx.lineWidth = 1;
+  for (let g = 0; g <= 3; g++) {
+    const y = pad.t + ph * g / 3;
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + pw, y); ctx.stroke();
+    const v = eHi - (eHi - eLo) * g / 3;
+    ctx.fillStyle = '#8b8b94';
+    ctx.fillText(v.toLocaleString('zh-CN', { maximumFractionDigits: 0 }), pad.l + pw + 5, y + 3);
+  }
+  const X = i => pad.l + i / Math.max(1, eq.length - 1) * pw;
+  const YE = v => pad.t + (eHi - v) / (eHi - eLo) * ph;
+
+  // 初始资金基准线
+  ctx.setLineDash([3, 4]);
+  ctx.strokeStyle = '#33333c';
+  const yb = YE(c.initial);
+  ctx.beginPath(); ctx.moveTo(pad.l, yb); ctx.lineTo(pad.l + pw, yb); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 价格（淡）
+  if (px.length > 1) {
+    ctx.beginPath();
+    const n = Math.min(px.length, eq.length);
+    for (let i = 0; i < n; i++) {
+      const v = pLo === pHi ? 0.5 : (px[px.length - n + i] - pLo) / (pHi - pLo);
+      const x = pad.l + i / Math.max(1, n - 1) * pw;
+      const y = pad.t + (1 - v) * ph;
+      i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = '#3a3a44'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  // 权益
+  ctx.beginPath();
+  eq.forEach((p, i) => { const x = X(i), y = YE(p.equity); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+  ctx.strokeStyle = '#48d6a4'; ctx.lineWidth = 1.7; ctx.stroke();
+
+  // 成交标记
+  for (const f of (c.recentFills || [])) {
+    const idx = eq.findIndex(p => p.bar === f.bar);
+    if (idx < 0) continue;
+    const x = X(idx), y = YE(eq[idx].equity);
+    const up = f.side === 'buy';
+    ctx.fillStyle = up ? '#ef4b5e' : '#3fbf8f';
+    ctx.beginPath();
+    if (up) { ctx.moveTo(x, y - 7); ctx.lineTo(x - 3.5, y - 1); ctx.lineTo(x + 3.5, y - 1); }
+    else { ctx.moveTo(x, y + 7); ctx.lineTo(x - 3.5, y + 1); ctx.lineTo(x + 3.5, y + 1); }
+    ctx.closePath(); ctx.fill();
+  }
+}
+
+// ---------- 启动 ----------
+boot();
+</script>
+</body>
+</html>

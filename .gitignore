@@ -1,0 +1,99 @@
+# Dependencies and generated output
+node_modules/
+dist/
+build/
+coverage/
+playwright-report/
+test-results/
+*.log
+*.tsbuildinfo
+
+# Local credentials and editor files
+.env
+.env.*
+!.env.example
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Reference material, work records and recording tools
+reference/
+research/
+output/
+scripts/
+task_plan.md
+notes.md
+
+# Never publish recordings, video or audio assets
+*.mp4
+*.m4v
+*.mov
+*.webm
+*.mkv
+*.avi
+*.wmv
+*.flv
+*.mpeg
+*.mpg
+*.m3u8
+*.ts
+*.mp3
+*.wav
+*.m4a
+*.flac
+*.ogg
+
+# Archives and local backups
+*.zip
+*.7z
+*.tar
+*.gz
+*.bak
+*.tmp
+
+# Explicit user exports and local MCP data
+exports/
+.prompt-spider/
+
+# ─────────────────────────────────────────────────────────────
+#  以下是量化模块新增部分
+# ─────────────────────────────────────────────────────────────
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 模拟盘账户状态：含个人持仓、成交与运行日志，属于本机数据
+quant/state/paper-sessions.json
+quant/state/*.tmp
+
+# 标的目录缓存（A股 8265 只 / 加密 511 对的枚举结果，约 1 MB）
+# 不入库的理由：首次运行会自动重建，且有 12 小时 TTL ——
+# 提交一份固定快照反而会让人误以为数据是新的。
+quant/state/symbols-cache.json
+
+# 实时会话发现文件
+# ⚠️ 这个文件由 mcp/live-feed.mjs 在运行时写入，内容含**预览能力 token**
+#    （形如 ...#token=<64位十六进制>）。虽然只在本地生效、进程退出即失效，
+#    但把凭据类内容提交进仓库是不对的。
+#    另外它每次运行都会变，提交进去只会造成无意义的 diff。
+lib/live-sessions.json
+
+# headless Chrome 的 profile 目录（每个几十 MB，抓图验证用）
+.shot-profile/
+.vc/
+.shots/
+.shots2/
+.shot3/
+.pp/
+.pp2/
+.ppf/
+.nav/
+.nav2/
+.qb/
+.fix1/
+.t1/
+.t2/
+.live-pg/

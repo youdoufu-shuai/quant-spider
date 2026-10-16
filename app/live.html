@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>实时会话入口 · Live Sessions</title>
+<style>
+  :root{--bg:#080909;--panel:#0e0e11;--panel2:#131317;--border:#24242a;
+        --text:#e8e8e9;--muted:#8b8b94;--accent:#f23c83;--ok:#48d6a4;--warn:#f4cf4d}
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);
+    font:13px/1.7 Consolas,"Cascadia Code",ui-monospace,monospace}
+  #top{padding:26px 30px 18px;border-bottom:1px solid var(--border);background:var(--panel)}
+  h1{margin:0;font-size:15px;letter-spacing:.16em;font-weight:400}
+  .sub{color:var(--accent);font-size:10px;letter-spacing:.14em;margin-top:2px}
+  #wrap{padding:22px 30px 60px;max-width:1100px}
+  .hint{color:var(--muted);font-size:11px;margin-bottom:20px;line-height:1.9;
+    padding:12px 15px;background:#0b0b0e;border-left:2px solid var(--accent)}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;
+    padding:16px 18px;margin-bottom:12px;transition:border-color .15s}
+  .card:hover{border-color:var(--accent)}
+  .card.active{border-color:var(--ok);box-shadow:0 0 0 1px rgba(72,214,164,.18)}
+  .card h3{margin:0 0 6px;font-size:13px;font-weight:400}
+  .row{display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+  .kv{color:var(--muted);font-size:11px}
+  .kv b{color:var(--text);font-weight:400}
+  a.go{display:inline-block;margin-top:10px;padding:7px 16px;background:var(--accent);
+    color:#fff;text-decoration:none;border-radius:3px;font-size:11px}
+  a.go:hover{filter:brightness(1.12)}
+  .url{font-size:10px;color:var(--muted);word-break:break-all;margin-top:8px}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:9px;
+    border:1px solid var(--border);font-size:10px;color:var(--muted)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+  .dot.stale{background:var(--warn)}
+  .empty{color:var(--muted);padding:30px 0;font-size:12px}
+  .actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap}
+  button{background:#191a1e;color:var(--text);border:1px solid var(--border);
+    padding:6px 13px;font:inherit;font-size:11px;border-radius:3px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  #count{color:var(--muted);font-size:11px}
+  .errbox{display:none;padding:12px 15px;border:1px solid var(--accent);border-radius:4px;
+    color:var(--accent);background:#1a0d13;margin-bottom:16px;font-size:11px}
+</style>
+</head>
+<body>
+<div id="top">
+  <h1>LIVE SESSIONS</h1>
+  <div class="sub">实时会话入口 · 永远指向当前有效会话</div>
+</div>
+<div id="wrap">
+  <div class="hint">
+    这个页面的存在是为了解决一个问题：<b>MCP 预览服务每次启动都换随机端口</b>
+    （49909 → 62664 → 65221 → 53198…），所以旧的预览链接会指向已经死掉的会话 ——
+    页面停在最后一帧不动，看起来像「没有新动画」。<br>
+    把 <b>http://127.0.0.1:4317/live</b> 收藏起来，它每次都读最新的有效链接。
+    <span id="count"></span>
+  </div>
+  <div class="errbox" id="err"></div>
+  <div id="list"><div class="empty">加载中…</div></div>
+  <div class="actions">
+    <button id="reload">重新扫描</button>
+    <button id="openFirst">打开最新会话</button>
+    <span style="align-self:center" class="kv">
+      自动刷新：<b id="autoState">开</b>
+    </span>
+    <button id="toggleAuto">暂停自动刷新</button>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+let timer = null, auto = true;
+
+const ago = ms => {
+  const s = Math.round((Date.now() - ms) / 1000);
+  if (s < 60) return s + ' 秒前';
+  if (s < 3600) return Math.round(s / 60) + ' 分钟前';
+  return Math.round(s / 3600) + ' 小时前';
+};
+
+async function load(autoOpen = false) {
+  try {
+    // 发现文件：主服务器对 /lib/ 有白名单静态路由
+    const r = await fetch('/lib/live-sessions.json?_=' + Date.now());
+    if (!r.ok) throw new Error(`发现文件 HTTP ${r.status}`);
+    const d = await r.json();
+    const list = (d.sessions || []).filter(s => s.previewUrl);
+
+    $('count').textContent = `当前 ${list.length} 个活跃会话`;
+    $('err').style.display = 'none';
+
+    if (!list.length) {
+      $('list').innerHTML = `<div class="empty">
+        没有活跃的实时会话。<br><br>
+        启动方式（在 prompt-spider-ui 目录）：<br>
+        &nbsp;&nbsp;<b>node mcp/live-feed.mjs --interval 2.0</b><br><br>
+        或双击 <b>实时跟随.cmd</b>。启动后本页会自动发现它。
+      </div>`;
+      return;
+    }
+
+    $('list').innerHTML = list.map((s, i) => {
+      const fresh = Date.now() - (s.updatedAt || 0) < 30000;
+      return `<div class="card ${i === 0 ? 'active' : ''}">
+        <h3>${escapeHtml(s.title || '(无标题)')}</h3>
+        <div class="row">
+          <span class="pill"><span class="dot ${fresh ? '' : 'stale'}"></span>
+            ${fresh ? '活跃' : '最近 ' + ago(s.updatedAt)}</span>
+          <span class="kv">轮次 <b>${s.turns ?? '—'}</b></span>
+          <span class="kv">步骤 <b>${s.steps ?? '—'}</b></span>
+          <span class="kv">当前 <b>${escapeHtml(s.current || '—')}</b></span>
+          <span class="kv">启动 <b>${s.startedAt ? new Date(s.startedAt).toLocaleTimeString('zh-CN', { hour12: false }) : '—'}</b></span>
+          <span class="kv">pid <b>${s.pid ?? '—'}</b></span>
+        </div>
+        <a class="go" href="${escapeAttr(s.previewUrl)}">打开这个会话 →</a>
+        <div class="url">${escapeHtml(s.previewUrl)}</div>
+      </div>`;
+    }).join('');
+
+    if (autoOpen) location.href = list[0].previewUrl;
+  } catch (e) {
+    $('err').style.display = 'block';
+    $('err').textContent = '读取发现文件失败：' + e.message +
+      ' —— 确认主服务在 4317 端口运行（node server.mjs）。';
+    $('list').innerHTML = '<div class="empty">无法获取会话列表。</div>';
+  }
+}
+
+const escapeHtml = s => String(s).replace(/[&<>"]/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const escapeAttr = s => escapeHtml(s);
+
+function setAuto(on) {
+  auto = on;
+  $('autoState').textContent = on ? '开' : '关';
+  $('toggleAuto').textContent = on ? '暂停自动刷新' : '恢复自动刷新';
+  if (timer) { clearInterval(timer); timer = null; }
+  if (on) timer = setInterval(() => load(false), 4000);
+}
+
+$('reload').onclick = () => load(false);
+$('openFirst').onclick = () => load(true);
+$('toggleAuto').onclick = () => setAuto(!auto);
+
+setAuto(true);
+load(false);
+</script>
+</body>
+</html>

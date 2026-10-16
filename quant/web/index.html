@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>量化看板 · Quant Board</title>
+<style>
+  :root{
+    --bg:#080909; --panel:#0e0e11; --panel2:#131317; --border:#24242a;
+    --text:#e8e8e9; --muted:#8b8b94; --accent:#f23c83;
+    --up:#ef4b5e; --down:#3fbf8f;         /* A股习惯：红涨绿跌 */
+    --code:#48d6a4; --model:#e18c78; --you:#f4cf4d;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font:12px/1.55 Consolas,"Cascadia Code",ui-monospace,monospace}
+  a{color:var(--accent)}
+  #top{display:flex;align-items:center;gap:14px;padding:12px 18px;
+    border-bottom:1px solid var(--border);background:var(--panel);flex-wrap:wrap}
+  #top h1{margin:0;font-size:13px;letter-spacing:.16em;font-weight:400}
+  #top .sub{color:var(--accent);font-size:10px;letter-spacing:.12em}
+  select,input,button{background:#191a1e;color:var(--text);border:1px solid var(--border);
+    padding:5px 8px;font:inherit;font-size:11px;border-radius:3px}
+  button{cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .spacer{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:10px;
+    border:1px solid var(--border);font-size:10px;color:var(--muted)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--code)}
+  .dot.err{background:var(--accent)}
+  #wrap{padding:14px 18px 40px;display:grid;gap:14px}
+  #wrap>*{min-width:0}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px}
+  /* P2-6：取数失败时把旧数据标灰，避免把过期数字当成当前值 */
+  #wrap.stale{opacity:.55;transition:opacity .2s}
+  .card>h2{margin:0;padding:9px 13px;font-size:11px;font-weight:400;color:var(--muted);
+    letter-spacing:.1em;border-bottom:1px solid var(--border);display:flex;
+    justify-content:space-between;align-items:center;gap:10px}
+  .card .body{padding:11px 13px}
+  canvas{display:block;width:100%}
+  .quote{display:flex;gap:26px;flex-wrap:wrap;align-items:baseline}
+  .quote .price{font-size:30px;line-height:1}
+  .quote .chg{font-size:15px}
+  .quote .kv{display:flex;flex-direction:column;gap:1px}
+  .quote .kv span:first-child{color:var(--muted);font-size:10px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  @media (max-width:1180px){.grid2,.grid3{grid-template-columns:1fr}}
+  /* grid 子项默认 min-width:auto，会被内部宽内容撑破容器 —— 显式归零 */
+  .grid2>*,.grid3>*{min-width:0}
+  .card{min-width:0}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th,td{text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap}
+  th{color:var(--muted);font-weight:400;font-size:10px;letter-spacing:.04em}
+  th:first-child,td:first-child{text-align:left}
+  /* P1-1：15 列的回测表最小内容宽约 930px，会把单列 grid 撑到 959px，
+     导致 900px 窗口下右侧被裁掉 95px（CDP 实测 docScrollWidth=977）。
+     用横向滚动容器隔离，避免表格反过来撑破整页布局。 */
+  .tablewrap{overflow-x:auto;margin:-3px 0}
+  .tablewrap table{min-width:max-content}
+  td.num{font-variant-numeric:tabular-nums}
+  tr.sel{background:#17171c}
+  tr:hover{background:#141419;cursor:pointer}
+  .pos{color:var(--up)} .neg{color:var(--down)} .mut{color:var(--muted)}
+  .tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;border:1px solid}
+  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
+  @media (max-width:760px){.metrics{grid-template-columns:repeat(2,1fr)}}
+  .metric{background:var(--panel2);border:1px solid var(--border);border-radius:3px;padding:8px 10px}
+  .metric .k{color:var(--muted);font-size:10px}
+  .metric .v{font-size:17px;margin-top:3px}
+  .log{max-height:260px;overflow:auto;font-size:11px}
+  .log div{padding:3px 0;border-bottom:1px solid #17171c;display:flex;gap:9px}
+  .log .t{color:var(--muted);min-width:118px}
+  .log .kind{min-width:44px}
+  .legend{display:flex;gap:13px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin-top:6px}
+  .legend i{display:inline-block;width:9px;height:3px;vertical-align:middle;margin-right:4px}
+  .warn{color:var(--you);font-size:10px}
+  #err{display:none;margin:0 18px;padding:10px 13px;border:1px solid var(--accent);
+    border-radius:4px;color:var(--accent);background:#1a0d13;
+    white-space:pre-wrap;word-break:break-word}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <h1>QUANT BOARD</h1>
+  <div class="sub">REAL MARKET DATA</div>
+  <select id="market"></select>
+  <select id="symbol"></select>
+  <select id="interval"></select>
+  <select id="limit">
+    <option value="120">120 根</option>
+    <option value="250" selected>250 根</option>
+    <option value="500">500 根</option>
+    <option value="800">800 根</option>
+  </select>
+  <button id="reload" class="primary">刷新</button>
+  <select id="autoRefresh" title="自动刷新间隔">
+    <option value="0">手动刷新</option>
+    <option value="15000">每 15 秒</option>
+    <option value="30000" selected>每 30 秒</option>
+    <option value="60000">每 1 分钟</option>
+    <option value="300000">每 5 分钟</option>
+  </select>
+  <span class="spacer"></span>
+  <span class="pill"><span class="dot" id="dot"></span><span id="status">加载中…</span></span>
+  <span class="kv" id="lastAt"></span>
+  <a href="/paper.html" title="模拟盘：可手动下单、自动交易、账户持久化">模拟盘 →</a>
+  <a href="http://127.0.0.1:4317/live" target="_blank">Agent 实时面板</a>
+  <a href="/spider-viewer.html" target="_blank">美术查看器</a>
+</div>
+
+<div id="err"></div>
+
+<div id="wrap">
+
+  <!-- 蜘蛛网：量化过程可视化 -->
+  <div class="card">
+    <h2>
+      <span>量化过程 · 蜘蛛网视角 <span class="mut">K线时间序列 → 策略引擎 → 目标动作</span></span>
+      <span class="mut">蜘蛛本体与主面板共用同一份绘制代码</span>
+    </h2>
+    <div class="body">
+      <canvas id="cvSpider"></canvas>
+      <div class="legend">
+        <span><i style="background:#48d6a4"></i>蛛网 = 时间序列</span>
+        <span><i style="background:#ef4b5e"></i>买入信号节点</span>
+        <span><i style="background:#3fbf8f"></i>卖出信号节点</span>
+        <span><i style="background:#f23c83"></i>心跳核心 = 市场状态</span>
+        <span class="mut">虚线触手 = 正在评估的那根 K 线</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 实时行情 -->
+  <div class="card">
+    <h2><span>实时行情</span><span id="quoteSrc" class="warn"></span></h2>
+    <div class="body quote" id="quote"></div>
+  </div>
+
+  <!-- K 线 + 指标 -->
+  <div class="card">
+    <h2>
+      <span>K 线 / 均线 / 布林带 <span class="mut" id="chartInfo"></span></span>
+      <span class="mut" id="strategyPick">信号来源：<select id="sigSel"></select></span>
+    </h2>
+    <div class="body">
+      <canvas id="cvMain" height="330"></canvas>
+      <div class="legend" id="legendMain"></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2>MACD</h2>
+      <div class="body"><canvas id="cvMacd" height="140"></canvas></div>
+    </div>
+    <div class="card">
+      <h2>RSI / KDJ</h2>
+      <div class="body">
+        <canvas id="cvRsi" height="140"></canvas>
+        <div class="legend">
+          <span><i style="background:#f4cf4d"></i>RSI</span>
+          <span><i style="background:#48d6a4"></i>K</span>
+          <span><i style="background:#e18c78"></i>D</span>
+          <span class="mut">30 / 70 为超卖/超买参考线</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 回测绩效 -->
+  <div class="card">
+    <h2>
+      <span>回测绩效 <span class="mut">真实历史数据 · 次日开盘成交 · 含手续费与滑点</span></span>
+      <span class="mut" id="btMeta"></span>
+    </h2>
+    <div class="body">
+      <div class="tablewrap">
+      <table id="btTable">
+        <thead><tr>
+          <th>策略</th><th>总收益</th><th>基准</th><th>超额</th><th>年化</th>
+          <th>回撤</th><th>夏普</th><th>索提诺</th><th>卡玛</th>
+          <th>交易</th><th>胜率</th><th>盈亏比</th><th>期望/笔</th><th>成本</th><th>持仓</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid3">
+    <!-- 模拟盘 -->
+    <div class="card">
+      <h2>模拟盘 <span class="mut">纸上交易</span></h2>
+      <div class="body">
+        <div id="paper"></div>
+      </div>
+    </div>
+
+    <!-- 权益曲线 -->
+    <div class="card">
+      <h2>权益曲线</h2>
+      <div class="body">
+        <canvas id="cvEquity" height="180"></canvas>
+        <div class="legend" id="legendEquity"></div>
+      </div>
+    </div>
+
+    <!-- 信号与成交 -->
+    <div class="card">
+      <h2>过程明细 <span class="mut">逐笔</span></h2>
+      <div class="body">
+        <div class="log" id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>最新指标快照 <span class="mut">全部由真实价格序列算出，缺失显示「—」</span></h2>
+    <div class="body"><div class="metrics" id="snap"></div></div>
+  </div>
+
+  <div class="card">
+    <h2>说明与边界</h2>
+    <div class="body mut" style="line-height:1.9">
+      <div>· <b style="color:var(--text)">数据来源</b>：加密走 Binance 数据镜像；A 股走新浪财经（腾讯备用，东方财富末位）。页头显示实际命中的源。</div>
+      <div>· <b style="color:var(--text)">没有未来函数</b>：第 i 根收盘产生的信号，强制在第 i+1 根<b>开盘</b>成交。收益不是「预知收盘价」算出来的。</div>
+      <div>· <b style="color:var(--text)">成本已建模</b>：A 股万三手续费 + 万五滑点，且必须整手（100 股）交易；加密千一 + 万五。「成本拖累」是用零成本重跑一遍<b>实测</b>出来的差值，不是估算。</div>
+      <div>· <b style="color:var(--text)">模拟盘不是实盘</b>：只读行情，不连接任何交易接口，不持有 API Key，不产生真实委托。所有成交都在内存里推演。</div>
+      <div>· <b style="color:var(--text)">未平仓不计入胜率</b>：期末仍有持仓时，浮动盈亏不参与交易统计，避免虚高。</div>
+      <div>· <b style="color:var(--text)">策略是公开经典逻辑</b>：双均线（CTA 基本款）、RSI（Wilder 原书）、布林带（Bollinger 顺势用法）、MACD（Appel 原义）、唐奇安（海龟法则）。</div>
+    </div>
+  </div>
+
+</div>
+
+<script type="module">
+import { QuantSpiderRenderer } from './spider-web.js';
+
+const $ = id => document.getElementById(id);
+const API = '/api/quant';
+let DATA = null, META = null, SIG = 'rsi_reversion';
+let SPIDER = null, rafId = null;
+
+// ---------- 颜色 ----------
+const C = {
+  text:'#e8e8e9', muted:'#8b8b94', grid:'#1b1b20', border:'#24242a',
+  up:'#ef4b5e', down:'#3fbf8f',
+  ema12:'#f4cf4d', ema26:'#7aa2f7', sma20:'#9d7cd8',
+  bbu:'#4a4a55', bbl:'#4a4a55', bbm:'#6b6b78',
+  dif:'#f4cf4d', dea:'#7aa2f7', hist:'#5a5a66',
+  rsi:'#f4cf4d', k:'#48d6a4', d:'#e18c78',
+  entry:'#ef4b5e', exit:'#3fbf8f',
+  equity:['#48d6a4','#f4cf4d','#e18c78','#7aa2f7','#9d7cd8'],
+};
+
+// ---------- 工具 ----------
+function fitCanvas(cv, cssHeight) {
+  const dpr = Math.min(2, Math.max(1, devicePixelRatio || 1));
+  const w = cv.clientWidth || cv.parentElement.clientWidth;
+  cv.width = Math.round(w * dpr);
+  cv.height = Math.round(cssHeight * dpr);
+  cv.style.height = cssHeight + 'px';
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, cssHeight);
+  return { c, w, h: cssHeight };
+}
+const fmt = (v, d = 2) => {
+  if (v === null || v === undefined || Number.isNaN(v)) return '—';
+  const n = Number(v);
+  // P2-3：四舍五入后是 0 的极小数会被 toLocaleString 渲染成 "-0"，
+  // 看起来像负值。小于半个最低位就直接归零。
+  const zero = 0.5 * Math.pow(10, -d);
+  const x = Math.abs(n) < zero ? 0 : n;
+  return x.toLocaleString('zh-CN', { minimumFractionDigits: d, maximumFractionDigits: d });
+};
+const pct = (v, d = 2) => (v === null || v === undefined) ? '—' : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + '%';
+const cls = v => (v === null || v === undefined) ? 'mut' : (v > 0 ? 'pos' : v < 0 ? 'neg' : 'mut');
+
+// ---------- 启动 ----------
+async function boot() {
+  try {
+    const r = await fetch('/api/meta');
+    META = await r.json();
+  } catch (e) { return fail('无法读取 /api/meta：' + e.message); }
+
+  const mk = $('market');
+  mk.innerHTML = Object.entries(META.markets)
+    .map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
+  mk.onchange = () => { fillSymbols(); fillIntervals(); load(); };
+
+  $('sigSel').innerHTML = Object.entries(META.strategies)
+    .map(([k, v]) => `<option value="${k}">${v.label || k}</option>`).join('');
+  $('sigSel').value = SIG;
+  $('sigSel').onchange = () => { SIG = $('sigSel').value; render(); };
+
+  $('reload').onclick = () => load(true);
+
+  // P1-2：切换标的/粒度/根数必须重新取数。
+  // 之前这三个 select 没有任何监听器 —— 实测派发 change 后 4 秒内
+  // /api/quant 请求数为 0，必须再手点「刷新」才生效，很容易让人以为坏了。
+  ['symbol', 'interval', 'limit'].forEach(id => {
+    $(id).onchange = () => load(false);
+  });
+
+  // 自动刷新：行情是实时的，页面不该停在打开那一刻
+  let autoTimer = null;
+  function setAuto(ms) {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    if (!ms) return;
+    autoTimer = setInterval(() => {
+      // 页面不可见时不刷新 —— 省 CPU，也避免数据源被无意义地打
+      if (!document.hidden) load(false);
+    }, ms);
+  }
+  $('autoRefresh').onchange = e => setAuto(Number(e.target.value));
+  setAuto(Number($('autoRefresh').value));
+
+  // 从后台切回来时立刻补一次
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && DATA) load(false);
+  });
+
+  fillSymbols(); fillIntervals();
+  await load();
+}
+
+function fillSymbols() {
+  const m = META.markets[$('market').value];
+  $('symbol').innerHTML = m.symbols
+    .map(s => `<option value="${s}">${META.symbolNames?.[s] || s}</option>`).join('');
+  $('symbol').value = m.defaultSymbol;
+}
+function fillIntervals() {
+  const m = META.markets[$('market').value];
+  $('interval').innerHTML = m.intervals.map(i => `<option value="${i}">${i}</option>`).join('');
+  $('interval').value = m.defaultInterval;
+}
+
+function fail(msg) {
+  const e = $('err'); e.style.display = 'block'; e.textContent = msg;
+  $('status').textContent = '出错'; $('dot').className = 'dot err';
+}
+
+// ---------- 取数 ----------
+async function load(force) {
+  const q = new URLSearchParams({
+    market: $('market').value, symbol: $('symbol').value,
+    interval: $('interval').value, limit: $('limit').value,
+  });
+  $('status').textContent = '加载中…'; $('dot').className = 'dot';
+  $('err').style.display = 'none';
+  const t0 = performance.now();
+  try {
+    const r = await fetch(API + '?' + q + (force ? '&_=' + Date.now() : ''));
+    const d = await r.json();
+    if (!r.ok || d.error) return fail('管道错误：' + (d.error || r.status));
+    DATA = d;
+    const ms = Math.round(performance.now() - t0);
+    const cached = d._cache?.hit ? ` · 缓存 ${Math.round((d._cache.ageMs || 0) / 1000)}s` : '';
+    $('status').textContent = `${d.meta.source} · ${ms}ms${cached}`;
+    $('lastAt').textContent = `更新于 ${d.generatedAt || new Date().toLocaleTimeString('zh-CN', { hour12: false })}`;
+    $('dot').className = 'dot';
+    $('wrap').classList.remove('stale');      // P2-6：成功取数后去掉陈旧标记
+    render();
+  } catch (e) {
+    // P2-6：失败时把旧数据标灰，并说明数据可能过期 ——
+    // 否则页面还显示着上一次的数字，很容易被当成当前值
+    $('wrap').classList.add('stale');
+    fail('请求失败：' + e.message + (DATA ? '\n下方数据是上一次成功取数的结果，可能已过期。' : ''));
+  }
+}
+
+// ---------- 渲染 ----------
+function render() {
+  if (!DATA) return;
+  quote(); spiderView();
+  // P1-5：表格必须排在图表**之前**。
+  // 表格填满后会撑大列宽，如果图表先画，位图宽度就与最终 CSS 宽度不一致
+  // （实测 @900 出现 attr=818 而 css.w=931，画面被拉伸 13.8%）。
+  btTable(); paper(); equityChart(); logTable(); snapshot();
+  mainChart(); macdChart(); rsiChart();
+}
+
+/**
+ * 蜘蛛网视角：把量化数据映射到蛛网上，并持续动画。
+ *
+ * 为什么要持续重绘：蜘蛛的腿在走、心跳核心在脉动，这些都是 time 驱动的，
+ * 停止重绘画面就"死"了。
+ *
+ * 但**不能每次数据刷新都重启循环** —— 自动刷新每 30 秒触发一次 render()，
+ * 如果每次都 cancel + 重新 requestAnimationFrame，会反复建立/拆除循环，
+ * 而且缓存键不变时 prepare() 也白算。所以数据变了只更新 DATA 引用
+ * （循环闭包里读的是模块变量），只有策略切换才真正重启。
+ */
+let spiderLoopKey = '';
+function spiderView() {
+  const cv = $('cvSpider');
+  if (!SPIDER) SPIDER = new QuantSpiderRenderer(cv);
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const win = Math.max(80, Math.min(160, Math.round(DATA.bars.length * 0.55)));
+  const key = `${SIG}|${win}|${reduced}`;
+  if (key === spiderLoopKey && rafId !== null) return;   // 已在跑，数据会自动生效
+
+  spiderLoopKey = key;
+  if (rafId !== null) cancelAnimationFrame(rafId);
+  const loop = () => {
+    SPIDER.render(DATA, {
+      strategy: SIG,
+      reducedMotion: reduced,
+      time: performance.now() / 1000,
+      window: win,
+    });
+    rafId = requestAnimationFrame(loop);
+  };
+  loop();
+}
+
+function quote() {
+  const q = DATA.live || {}, m = DATA.meta;
+  if (q.error) { $('quote').innerHTML = `<span class="mut">实时快照失败：${q.error}</span>`; return; }
+  const chg = q.changePct ?? 0;
+  const col = chg > 0 ? 'var(--up)' : chg < 0 ? 'var(--down)' : 'var(--muted)';
+  const isUp = chg >= 0;
+  $('quote').innerHTML = `
+    <div>
+      <div class="kv"><span>${m.name} · ${m.symbol} · ${m.interval}</span>
+        <span class="price" style="color:${col}">${fmt(q.last)}</span></div>
+      <div class="chg" style="color:${col}">${isUp ? '▲' : '▼'} ${fmt(q.change)} (${pct(chg)})</div>
+    </div>
+    <div class="kv"><span>今开</span><b>${fmt(q.open)}</b></div>
+    <div class="kv"><span>最高</span><b>${fmt(q.high)}</b></div>
+    <div class="kv"><span>最低</span><b>${fmt(q.low)}</b></div>
+    <div class="kv"><span>昨收</span><b>${fmt(q.prevClose)}</b></div>
+    <div class="kv"><span>成交量</span><b>${fmt(q.volume, 0)}</b></div>
+    <div class="kv"><span>K线区间</span><b>${m.first} → ${m.last}</b></div>
+    <div class="kv"><span>K线根数</span><b>${m.count}</b></div>`;
+  $('quoteSrc').textContent = `数据源：${q.source || m.source}`;
+  $('chartInfo').textContent = `· ${m.count} 根 ${m.interval}`;
+}
+
+function mainChart() {
+  const { c, w, h } = fitCanvas($('cvMain'), 330);
+  const pad = { l: 8, r: 62, t: 10, b: 18 };
+  const bars = DATA.bars, n = bars.length;
+  const ind = DATA.indicators;
+  const show = ['bb_upper','bb_mid','bb_lower','ema12','ema26','sma20'];
+  let lo = Infinity, hi = -Infinity;
+  for (const b of bars) { lo = Math.min(lo, b.l); hi = Math.max(hi, b.h); }
+  for (const k of ['bb_upper','bb_lower']) {
+    for (const v of (ind[k]?.values || [])) if (v !== null) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  }
+  for (const k of ['ema12','ema26','sma20']) {
+    for (const v of (ind[k]?.values || [])) if (v !== null) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+  }
+  const padY = (hi - lo) * 0.06 || 1; lo -= padY; hi += padY;
+
+  const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+  const X = i => pad.l + (i + 0.5) * (pw / n);
+  const Y = v => pad.t + (hi - v) / (hi - lo) * ph;
+  const bw = Math.max(1, (pw / n) * 0.68);
+
+  // 网格 + 价格轴
+  c.strokeStyle = C.grid; c.lineWidth = 1;
+  c.font = '10px Consolas, monospace'; c.fillStyle = C.muted;
+  for (let g = 0; g <= 4; g++) {
+    const v = lo + (hi - lo) * g / 4, y = Y(v);
+    c.beginPath(); c.moveTo(pad.l, y); c.lineTo(pad.l + pw, y); c.stroke();
+    c.fillText(fmt(v, 2), pad.l + pw + 6, y + 3);
+  }
+
+  // K 线
+  for (let i = 0; i < n; i++) {
+    const b = bars[i], up = b.c >= b.o;
+    const col = up ? C.up : C.down, x = X(i);
+    c.strokeStyle = col; c.fillStyle = col;
+    c.beginPath(); c.moveTo(x, Y(b.h)); c.lineTo(x, Y(b.l)); c.lineWidth = 1; c.stroke();
+    const yo = Y(b.o), yc = Y(b.c);
+    const top = Math.min(yo, yc), hgt = Math.max(1, Math.abs(yc - yo));
+    if (up) { c.fillStyle = '#080909'; c.fillRect(x - bw/2, top, bw, hgt);
+              c.strokeRect(x - bw/2 + .5, top + .5, bw - 1, Math.max(1, hgt - 1)); }
+    else c.fillRect(x - bw/2, top, bw, hgt);
+  }
+
+  // 指标线
+  const line = (key, color, width = 1, dash) => {
+    const v = ind[key]?.values; if (!v) return;
+    c.beginPath(); let started = false;
+    for (let i = 0; i < n; i++) {
+      if (v[i] === null) { started = false; continue; }
+      const x = X(i), y = Y(v[i]);
+      if (!started) { c.moveTo(x, y); started = true; } else c.lineTo(x, y);
+    }
+    c.setLineDash(dash || []); c.strokeStyle = color; c.lineWidth = width; c.stroke(); c.setLineDash([]);
+  };
+  line('bb_upper', C.bbu, 1, [3,3]);
+  line('bb_lower', C.bbl, 1, [3,3]);
+  line('bb_mid', C.bbm, 1, [2,4]);
+  line('ema12', C.ema12, 1.3);
+  line('ema26', C.ema26, 1.3);
+  line('sma20', C.sma20, 1.1);
+
+  // 买卖信号
+  const sig = DATA.signals[SIG];
+  if (sig) {
+    const mark = (idx, col, tri) => {
+      const b = bars[idx]; if (!b) return;
+      const x = X(idx), y = tri === 'up' ? Y(b.l) + 9 : Y(b.h) - 9;
+      c.fillStyle = col; c.beginPath();
+      if (tri === 'up') { c.moveTo(x, y - 6); c.lineTo(x - 4, y + 2); c.lineTo(x + 4, y + 2); }
+      else { c.moveTo(x, y + 6); c.lineTo(x - 4, y - 2); c.lineTo(x + 4, y - 2); }
+      c.closePath(); c.fill();
+    };
+    for (const i of sig.entries) mark(i, C.entry, 'up');
+    for (const i of sig.exits) mark(i, C.exit, 'down');
+  }
+
+  $('legendMain').innerHTML = `
+    <span><i style="background:${C.ema12}"></i>EMA12</span>
+    <span><i style="background:${C.ema26}"></i>EMA26</span>
+    <span><i style="background:${C.sma20}"></i>SMA20</span>
+    <span><i style="background:${C.bbu}"></i>布林带</span>
+    <span><i style="background:${C.entry}"></i>买入信号</span>
+    <span><i style="background:${C.exit}"></i>卖出信号</span>
+    <span class="mut">红涨绿跌（A股习惯）</span>`;
+}
+
+function macdChart() {
+  const { c, w, h } = fitCanvas($('cvMacd'), 140);
+  const pad = { l: 8, r: 62, t: 8, b: 14 };
+  const ind = DATA.indicators, n = DATA.bars.length;
+  const dif = ind.macd_dif?.values, dea = ind.macd_dea?.values, hist = ind.macd_hist?.values;
+  if (!dif) return;
+  const all = [...dif, ...(dea||[]), ...(hist||[])].filter(v => v !== null);
+  let lo = Math.min(...all), hi = Math.max(...all);
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const padY = (hi - lo) * 0.1; lo -= padY; hi += padY;
+  const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+  const X = i => pad.l + (i + 0.5) * (pw / n);
+  const Y = v => pad.t + (hi - v) / (hi - lo) * ph;
+
+  c.strokeStyle = C.grid; c.beginPath();
+  const y0 = Y(0);
+  c.moveTo(pad.l, y0); c.lineTo(pad.l + pw, y0); c.stroke();
+  c.font = '10px Consolas, monospace'; c.fillStyle = C.muted;
+  c.fillText(fmt(hi, 2), pad.l + pw + 6, pad.t + 9);
+  c.fillText(fmt(lo, 2), pad.l + pw + 6, h - pad.b);
+
+  const bw = Math.max(1, (pw / n) * 0.6);
+  for (let i = 0; i < n; i++) {
+    const v = hist[i]; if (v === null) continue;
+    c.fillStyle = v >= 0 ? C.up : C.down;
+    const y = Y(v), base = Y(0);
+    c.fillRect(X(i) - bw/2, Math.min(y, base), bw, Math.max(1, Math.abs(base - y)));
+  }
+  const line = (vals, color) => {
+    if (!vals) return;
+    c.beginPath(); let st = false;
+    for (let i = 0; i < n; i++) {
+      if (vals[i] === null) { st = false; continue; }
+      const x = X(i), y = Y(vals[i]);
+      if (!st) { c.moveTo(x, y); st = true; } else c.lineTo(x, y);
+    }
+    c.strokeStyle = color; c.lineWidth = 1.2; c.stroke();
+  };
+  line(dif, C.dif); line(dea, C.dea);
+}
+
+function rsiChart() {
+  const { c, w, h } = fitCanvas($('cvRsi'), 140);
+  const pad = { l: 8, r: 62, t: 8, b: 14 };
+  const ind = DATA.indicators, n = DATA.bars.length;
+  const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+  const X = i => pad.l + (i + 0.5) * (pw / n);
+  const Y = v => pad.t + (100 - v) / 100 * ph;
+
+  c.strokeStyle = C.grid; c.font = '10px Consolas, monospace';
+  for (const v of [30, 50, 70]) {
+    c.beginPath(); c.moveTo(pad.l, Y(v)); c.lineTo(pad.l + pw, Y(v)); c.stroke();
+    c.fillStyle = C.muted; c.fillText(String(v), pad.l + pw + 6, Y(v) + 3);
+  }
+  const line = (vals, color, width = 1.2) => {
+    if (!vals) return;
+    c.beginPath(); let st = false;
+    for (let i = 0; i < n; i++) {
+      if (vals[i] === null) { st = false; continue; }
+      const x = X(i), y = Y(vals[i]);
+      if (!st) { c.moveTo(x, y); st = true; } else c.lineTo(x, y);
+    }
+    c.strokeStyle = color; c.lineWidth = width; c.stroke();
+  };
+  line(ind.rsi?.values, C.rsi, 1.4);
+  line(ind.kdj_k?.values, C.k, 1);
+  line(ind.kdj_d?.values, C.d, 1);
+}
+
+function btTable() {
+  const tb = $('btTable').querySelector('tbody');
+  const b0 = Object.values(DATA.backtests)[0];
+
+  /**
+   * P2-2：短样本的年化指标会变成天文数字。
+   *
+   * 实测：250 根 1 分钟 K 线（≈4 小时）被按 `(final/initial)^(1/years)-1` 年化，
+   * 得到「年化 +486107%」「夏普 21212」「卡玛 1062044」——
+   * 数学上没算错，但完全没有意义，还会把表格撑宽。
+   *
+   * 判据：样本跨度不足 5 个交易日就把年化类指标标为「样本不足」。
+   * 为什么取 5 天：更短的窗口里，年化只是把噪声放大几十万倍。
+   */
+  const barsPerDay = { '1m':240,'3m':80,'5m':48,'15m':16,'30m':8,'60m':4,'1h':4,'4h':1,'1d':1,'1w':0.2,'1M':0.05 }[DATA.meta.interval] || 1;
+  const spanDays = b0 && !b0.error ? (b0.bar_count / barsPerDay) : 0;
+  const shortSample = spanDays < 5;
+
+  const rows = Object.entries(DATA.backtests).map(([k, b]) => {
+    if (b.error) return `<tr><td>${k}</td><td colspan="14" class="neg">${b.error}</td></tr>`;
+    const sel = k === SIG ? ' class="sel"' : '';
+    const cell = (v, d, suffix = '') => shortSample
+      ? '<span class="mut">样本不足</span>'
+      : `${pct(v, d)}${suffix}`;
+    const ratio = v => shortSample ? '<span class="mut">样本不足</span>' : fmt(v);
+    return `<tr${sel} data-k="${k}">
+      <td>${b.label}</td>
+      <td class="num ${cls(b.total_return)}">${pct(b.total_return)}</td>
+      <td class="num mut">${pct(b.benchmark_return)}</td>
+      <td class="num ${cls(b.excess_return)}">${pct(b.excess_return)}</td>
+      <td class="num ${shortSample ? 'mut' : cls(b.annual_return)}">${cell(b.annual_return, 2)}</td>
+      <td class="num neg">${fmt(b.max_drawdown)}%</td>
+      <td class="num ${shortSample ? 'mut' : cls(b.sharpe)}">${ratio(b.sharpe)}</td>
+      <td class="num ${shortSample ? 'mut' : cls(b.sortino)}">${ratio(b.sortino)}</td>
+      <td class="num ${shortSample ? 'mut' : cls(b.calmar)}">${ratio(b.calmar)}</td>
+      <td class="num">${b.trade_count}</td>
+      <td class="num">${fmt(b.win_rate, 1)}%</td>
+      <td class="num">${fmt(b.profit_factor)}</td>
+      <td class="num ${cls(b.expectancy)}">${fmt(b.expectancy, 0)}</td>
+      <td class="num mut">${fmt(b.cost_drag)}</td>
+      <td class="num mut">${fmt(b.exposure, 1)}%</td>
+    </tr>`;
+  }).join('');
+  tb.innerHTML = rows;
+  tb.querySelectorAll('tr[data-k]').forEach(tr => tr.onclick = () => {
+    SIG = tr.dataset.k; $('sigSel').value = SIG; render();
+  });
+
+  if (b0 && !b0.error) {
+    const span = spanDays >= 1 ? `${spanDays.toFixed(0)} 个交易日` : `${(spanDays * 24).toFixed(1)} 小时`;
+    $('btMeta').textContent =
+      `${b0.period} · ${b0.bar_count} 根 · 跨度约 ${span} · 源=${b0.source} · 初始 ${fmt(b0.initial, 0)}`
+      + (shortSample ? ' · ⚠ 样本过短，年化类指标不展示' : '');
+  }
+}
+
+function paper() {
+  const p = DATA.papers[SIG];
+  if (!p || p.error) { $('paper').innerHTML = `<span class="neg">${p?.error || '无数据'}</span>`; return; }
+  const rows = [
+    ['策略', p.label],
+    ['权益', fmt(p.equity)],
+    ['现金', fmt(p.cash)],
+    ['持仓', p.position_qty ? `${fmt(p.position_qty,0)} 股 @ ${fmt(p.position_avg_price)}` : '空仓'],
+    ['持仓市值', fmt(p.position_value)],
+    ['浮动盈亏', `<span class="${cls(p.unrealized_pnl)}">${fmt(p.unrealized_pnl)}</span>`],
+    ['已实现', `<span class="${cls(p.realized_pnl)}">${fmt(p.realized_pnl)}</span>`],
+    ['总收益', `<span class="${cls(p.total_return)}">${pct(p.total_return)}</span>`],
+    ['最大回撤', `<span class="neg">${fmt(p.max_drawdown)}%</span>`],
+    ['手续费', fmt(p.total_fees)],
+    ['完成交易', `${p.trade_count} 笔`],
+    ['胜率', `${fmt(p.win_rate,1)}% (${p.win_count}胜/${p.loss_count}负)`],
+    ['进度', `${p.bar_index + 1} / ${p.bars_total} 根`],
+    ['状态', p.in_position ? '<span class="pos">持仓中</span>' : '<span class="mut">空仓</span>'],
+  ];
+  $('paper').innerHTML = `<table><tbody>${rows.map(([k, v]) =>
+    `<tr><td class="mut">${k}</td><td>${v}</td></tr>`).join('')}</tbody></table>`;
+}
+
+function equityChart() {
+  const { c, w, h } = fitCanvas($('cvEquity'), 180);
+  const pad = { l: 8, r: 62, t: 10, b: 16 };
+  const curves = DATA.equityCurves || {};
+  const keys = Object.keys(curves);
+  if (!keys.length) return;
+  let lo = Infinity, hi = -Infinity;
+  for (const k of keys) for (const pt of curves[k]) {
+    lo = Math.min(lo, pt.equity); hi = Math.max(hi, pt.equity);
+  }
+  const padY = (hi - lo) * 0.08 || 1; lo -= padY; hi += padY;
+  const maxLen = Math.max(...keys.map(k => curves[k].length));
+  const pw = w - pad.l - pad.r, ph = h - pad.t - pad.b;
+  const X = i => pad.l + i / Math.max(1, maxLen - 1) * pw;
+  const Y = v => pad.t + (hi - v) / (hi - lo) * ph;
+
+  c.strokeStyle = C.grid; c.font = '10px Consolas, monospace';
+  for (let g = 0; g <= 3; g++) {
+    const v = lo + (hi - lo) * g / 3, y = Y(v);
+    c.beginPath(); c.moveTo(pad.l, y); c.lineTo(pad.l + pw, y); c.stroke();
+    c.fillStyle = C.muted; c.fillText(fmt(v, 0), pad.l + pw + 6, y + 3);
+  }
+  keys.forEach((k, ki) => {
+    const cur = curves[k], col = C.equity[ki % C.equity.length];
+    const dim = k !== SIG;
+    c.beginPath();
+    cur.forEach((pt, i) => { const x = X(i), y = Y(pt.equity);
+      i ? c.lineTo(x, y) : c.moveTo(x, y); });
+    c.strokeStyle = col; c.globalAlpha = dim ? 0.28 : 1; c.lineWidth = dim ? 1 : 1.7; c.stroke();
+    c.globalAlpha = 1;
+  });
+  $('legendEquity').innerHTML = keys.map((k, ki) =>
+    `<span style="opacity:${k === SIG ? 1 : .45}"><i style="background:${C.equity[ki % C.equity.length]}"></i>${DATA.backtests[k]?.label || k}</span>`
+  ).join('') + '<span class="mut">（加粗线为当前选中策略）</span>';   // P2-8：原文案说「加粗」，实际只改了透明度与线宽
+}
+
+function logTable() {
+  const p = DATA.papers[SIG];
+  const el = $('log');
+  if (!p || !p.events) { el.innerHTML = '<span class="mut">无数据</span>'; return; }
+  const KIND = { fill:'成交', order:'委托', reject:'拒绝' };
+  const COLOR = { fill:'var(--code)', order:'var(--muted)', reject:'var(--accent)' };
+  const evs = p.events.slice(-120).reverse();
+  el.innerHTML = evs.map(e => `
+    <div><span class="t">${e.at || ''}</span>
+      <span class="kind" style="color:${COLOR[e.kind] || 'inherit'}">${KIND[e.kind] || e.kind}</span>
+      <span>${e.text || ''}</span></div>`).join('') || '<span class="mut">暂无过程记录</span>';
+}
+
+function snapshot() {
+  const L = DATA.latest || {};
+  const groups = [
+    ['收盘', L.close, 2], ['EMA12', L.ema12, 2], ['EMA26', L.ema26, 2],
+    ['SMA20', L.sma20, 2], ['SMA60', L.sma60, 2],
+    ['RSI', L.rsi, 2], ['KDJ-K', L.kdj_k, 2], ['KDJ-D', L.kdj_d, 2],
+    ['MACD-DIF', L.macd_dif, 3], ['MACD-DEA', L.macd_dea, 3], ['MACD柱', L.macd_hist, 3],
+    ['ATR', L.atr, 2], ['ATR%', L.atrPct, 2],
+    ['布林上', L.bb_upper, 2], ['布林中', L.bb_mid, 2], ['布林下', L.bb_lower, 2],
+    ['布林带宽', L.bb_width, 2],
+    ['+DI', L.plus_di, 2], ['-DI', L.minus_di, 2], ['ADX', L.adx, 2],
+    ['量MA20', L.volume_ma20, 0], ['量比', L.volumeRatio, 3],
+    ['20日高', L.dc_upper, 2], ['20日低', L.dc_lower, 2],
+  ];
+  $('snap').innerHTML = groups.map(([k, v, d]) =>
+    `<div class="metric"><div class="k">${k}</div><div class="v">${v === null || v === undefined ? '—' : fmt(v, d)}</div></div>`
+  ).join('');
+}
+
+// ---------- 启动 ----------
+// P1-6：全局错误兜底。静态 import 失败（例如 /spider.js 挂掉）会中止整个
+// 模块脚本、boot() 永不执行，页面变成一片空白且没有任何提示（实测）。
+// 这两个监听器保证至少能告诉用户发生了什么。
+addEventListener('error', e => {
+  if (!DATA) fail('页面脚本出错：' + (e.message || '未知错误') +
+    (e.filename ? `\n  ${e.filename}:${e.lineno}:${e.colno}` : ''));
+});
+addEventListener('unhandledrejection', e => {
+  if (!DATA) fail('初始化失败：' + (e.reason?.message || e.reason || '未知原因'));
+});
+
+// P1-5 / P2-9：用 ResizeObserver 代替裸 resize 监听。
+// 为什么需要：回测表填满后会把列宽撑大，画布 CSS 宽度随之变化，
+// 但位图没有重绘 —— 实测 @900 出现 attr=818 而 css.w=931（拉伸 13.8%）。
+// 用 rAF 去抖，避免连续触发时重跑 5 张图 + 6 处 innerHTML。
+let resizeQueued = false;
+function queueRender() {
+  if (resizeQueued) return;
+  resizeQueued = true;
+  requestAnimationFrame(() => { resizeQueued = false; if (DATA) render(); });
+}
+addEventListener('resize', queueRender);
+if (globalThis.ResizeObserver) {
+  new ResizeObserver(queueRender).observe($('wrap'));
+}
+
+boot();
+</script>
+</body>
+</html>
