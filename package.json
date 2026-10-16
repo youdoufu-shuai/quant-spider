@@ -1,19 +1,25 @@
 {
-  "name": "prompt-spider-ui",
-  "version": "1.1.0",
-  "description": "Canvas 2D Agent visualization with optional local MCP, live events, replay, themes, layouts, and project export.",
+  "name": "quant-spider",
+  "version": "2.0.0",
+  "description": "真实行情量化看板（数据源 / 指标 / 策略 / 回测 / 模拟盘 / 自动交易）+ 原 prompt-spider-ui 的 Canvas 2D 蜘蛛过程可视化与 MCP 实时展示。零第三方依赖。",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Kirito14IT/prompt-spider-ui.git"
+    "url": "git+https://github.com/skyren/quant-spider.git"
   },
-  "bugs": { "url": "https://github.com/Kirito14IT/prompt-spider-ui/issues" },
-  "homepage": "https://github.com/Kirito14IT/prompt-spider-ui#readme",
+  "bugs": { "url": "https://github.com/skyren/quant-spider/issues" },
+  "homepage": "https://github.com/skyren/quant-spider#readme",
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
+    "quant": "node quant/server.mjs",
     "test": "node --test tests/body-motion.test.mjs tests/model.test.mjs tests/motion.test.mjs tests/probes.test.mjs tests/session.test.mjs tests/hub.test.mjs tests/live-ui.test.mjs",
-    "test:mcp": "npm --prefix mcp test"
+    "test:mcp": "npm --prefix mcp test",
+    "test:quant": "python quant/indicators.py --selftest && python quant/backtest.py --selftest && python quant/paper.py --selftest && python quant/paper_live.py --selftest && python quant/autotrader.py --selftest && python quant/datasource.py --selftest && python quant/symbols.py --selftest"
   },
+  "keywords": [
+    "quant", "trading", "backtest", "paper-trading", "technical-analysis",
+    "a-share", "cryptocurrency", "canvas", "visualization", "mcp"
+  ],
   "engines": { "node": ">=20" }
 }
