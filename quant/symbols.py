@@ -333,6 +333,69 @@ def fetch_crypto_list(force: bool = False) -> list[dict]:
 
 
 # ============================================================
+#  仅供展示的名字查询 —— **绝不联网**
+# ============================================================
+def cached_name(market: str, value: str) -> str | None:
+    """
+    只从**缓存**里查名字，查不到返回 None。**不会触发任何网络请求。**
+
+    ═══════════════════════════════════════════════════════════════
+      为什么必须单独有这么一个函数
+    ═══════════════════════════════════════════════════════════════
+    `display_name()` 走 `resolve()` → `_ashare_index()`，而后者在缓存缺失时
+    会**枚举 51997 个代码、耗时约 70 秒**。
+
+    对「取个名字显示一下」这种需求，这是灾难性的：
+      · 它把纯展示变成了阻塞网络调用
+      · 干净检出（CI、新克隆的仓库）必然没有缓存 → 必然触发
+      · 实测就是这么把 CI 拖挂的：一个 self-test 调了 paper_live.symbol_name()，
+        本地有缓存 0.2 秒过，CI 上无缓存 → 70 秒 → 120 秒超时
+
+    调用方要的是「能查到就显示中文名，查不到就显示代码」——
+    这**不需要**全量列表。缓存里有就直接用，没有就拉倒。
+    需要全量列表的场景（搜索、下拉）自己走 resolve()。
+    """
+    try:
+        cache = _load_cache()
+    except Exception:                                   # noqa: BLE001
+        return None
+    if not cache:
+        return None
+
+    v = (value or "").strip()
+    if not v:
+        return None
+
+    try:
+        if market == "ashare":
+            entry = cache.get("ashare2") or cache.get("ashare")
+            items = entry.get("items") if isinstance(entry, dict) else entry
+            if not items:
+                return None
+            sina = _to_sina_code(v)
+            plain = v.lstrip("shszbj")
+            for i in items:
+                if i.get("sina") == sina or i.get("plain") == plain:
+                    n = i.get("name")
+                    # 兜底列表里的 name 就是代码本身，那不算"查到名字"
+                    return n if n and n != sina else None
+            return None
+
+        entry = cache.get("crypto")
+        items = entry.get("items") if isinstance(entry, dict) else entry
+        if not items:
+            return None
+        sym = v.upper()
+        for i in items:
+            if i.get("symbol") == sym:
+                n = i.get("name")
+                return n if n and n != sym else None
+    except Exception:                                   # noqa: BLE001
+        return None
+    return None
+
+
+# ============================================================
 #  统一目录
 # ============================================================
 # 各市场在「快速下拉」里优先展示的常用标的。

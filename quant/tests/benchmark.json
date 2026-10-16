@@ -1,20 +1,20 @@
 {
   "500": {
-    "compute_ms": 62.2,
-    "strategies_ms": 14.5,
-    "run_backtest_all_ms": 277.8,
-    "paper_ms": 23.2
+    "compute_ms": 30.8,
+    "strategies_ms": 10.2,
+    "run_backtest_all_ms": 69.8,
+    "paper_ms": 7.7
   },
   "1000": {
-    "compute_ms": 112.6,
-    "strategies_ms": 36.2,
-    "run_backtest_all_ms": 223.0,
-    "paper_ms": 22.7
+    "compute_ms": 61.0,
+    "strategies_ms": 20.2,
+    "run_backtest_all_ms": 135.5,
+    "paper_ms": 16.5
   },
   "5000": {
-    "compute_ms": 594.8,
-    "strategies_ms": 164.1,
-    "run_backtest_all_ms": 1111.2,
-    "paper_ms": 102.9
+    "compute_ms": 316.6,
+    "strategies_ms": 103.1,
+    "run_backtest_all_ms": 678.3,
+    "paper_ms": 77.1
   }
 }

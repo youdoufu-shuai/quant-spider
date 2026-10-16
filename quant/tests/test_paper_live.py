@@ -331,12 +331,78 @@ class TestSnapshotAndState(TestCase):
         self.near(back.auto_config.risk.stop_loss, 0.03, 1e-12,
                   "嵌套的 risk.stop_loss 恢复")
 
+    def test_symbol_name_never_touches_the_network(self):
+        """
+        ★ symbol_name 必须是**纯查表**，一次网络请求都不能发。
+
+        ═══════════════════════════════════════════════════════════════
+          这条测试的由来（真实事故，别删）
+        ═══════════════════════════════════════════════════════════════
+        原来 symbol_name() 走的是 symbols.display_name() → resolve()
+        → _ashare_index()，而后者在**缓存缺失**时会枚举 51997 个代码、
+        耗时约 70 秒。
+
+        后果：本地有 symbols-cache.json（997KB，被 .gitignore 排除）→ 0.2 秒过；
+        CI 干净检出没有缓存 → 70 秒 → 撞上测试运行器的 120 秒超时 → CI 挂。
+
+        而且原来那条断言是**弱断言**：
+            name = symbol_name("ashare", "sh600519")
+            assert isinstance(name, str) and len(name) > 0
+        缓存命中返回「贵州茅台」能过，缓存缺失返回「sh600519」也能过 ——
+        所以它**掩盖**了背后那次 70 秒的枚举。
+
+        现在这里直接盯住两件事：
+          1. 返回的是字符串（不抛异常、不返回 None）
+          2. **没有发出任何网络请求**（连 socket 创建都不允许）
+        """
+        import socket
+        calls = []
+        real_socket = socket.socket
+
+        def spy(*a, **k):
+            calls.append(a)
+            return real_socket(*a, **k)
+
+        real_create = socket.create_connection
+        real_getaddr = socket.getaddrinfo
+
+        def spy_conn(*a, **k):
+            calls.append(("create_connection", a))
+            return real_create(*a, **k)
+
+        def spy_addr(*a, **k):
+            calls.append(("getaddrinfo", a))
+            return real_getaddr(*a, **k)
+
+        socket.socket = spy
+        socket.create_connection = spy_conn
+        socket.getaddrinfo = spy_addr
+        try:
+            n1 = symbol_name("crypto", "BTCUSDT")
+            n2 = symbol_name("ashare", "sh600519")
+            n3 = symbol_name("crypto", "ZZZUSDT")
+            n4 = symbol_name("ashare", "sz999999")
+        finally:
+            socket.socket = real_socket
+            socket.create_connection = real_create
+            socket.getaddrinfo = real_getaddr
+
+        self.eq(calls, [], f"symbol_name 不该创建任何 socket，实际调了 {calls[:3]}")
+        for n in (n1, n2, n3, n4):
+            self.true(isinstance(n, str) and len(n) > 0,
+                      f"返回非空字符串（实际 {n!r}）")
+
     def test_symbol_name_falls_back_to_code(self):
         """查不到名字时原样返回代码，不编造。"""
         self.eq(symbol_name("crypto", "ZZZUSDT"), "ZZZUSDT",
                 "未知加密标的 → 返回代码本身")
+        self.eq(symbol_name("ashare", "sz999999"), "sz999999",
+                "未知 A 股标的 → 返回代码本身")
+        # 不假设缓存里一定有 sh600519 —— 干净检出时没有缓存，
+        # 此时应返回代码本身，而不是编一个名字，也不是去联网查
         name = symbol_name("ashare", "sh600519")
-        self.true(isinstance(name, str) and len(name) > 0, f"已知标的有名字：{name}")
+        self.true(name in ("sh600519", "贵州茅台"),
+                  f"要么是代码、要么是缓存里的真名，实测 {name!r}")
 
 
 REGISTRY.extend([TestOrderValidation, TestFillMath, TestRiskStateReset,
@@ -367,7 +433,8 @@ declare_counts({
                              "test_state_round_trip": (11, 11),
                              "test_state_is_json_serializable": (2, 3),
                              "test_auto_config_round_trip": (2, 2),
-                             "test_symbol_name_falls_back_to_code": (2, 2)},
+                             "test_symbol_name_never_touches_the_network": (5, 5),
+                             "test_symbol_name_falls_back_to_code": (3, 3)},
 })
 
 

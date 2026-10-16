@@ -75,19 +75,29 @@ MAX_FILLS = 2000          # 每个会话保留的成交记录上限（防止 JSO
 # ============================================================
 def symbol_name(market: str, symbol: str) -> str:
     """
-    取标的中文名。
+    取标的中文名。**纯查表，绝不联网。**
 
-    统一走 symbols 目录（A 股 8265 只全量列表 + 加密 511 对的币种中文名表），
-    它查不到再退回内置 SYMBOL_NAMES。
-    查不到就**原样返回代码** —— 不编造名字。
+    查找顺序：
+      1. symbols 的**缓存**（A 股 8265 只 / 加密 511 对，由搜索功能负责填充）
+      2. 内置 SYMBOL_NAMES
+      3. 都没有就**原样返回代码** —— 不编造名字
+
+    ⚠️ 这里刻意**不**用 symbols.display_name()：那个会走 resolve() →
+       _ashare_index()，在缓存缺失时枚举 51997 个代码、耗时约 70 秒。
+
+       对一个「取个名字显示一下」的函数，把纯展示变成 70 秒阻塞网络调用
+       是不可接受的 —— 而且**干净检出必然没有缓存**，所以必然触发。
+       实测就是这么把 CI 拖挂的：本 self-test 调了本函数，
+       本地有缓存 0.2 秒过，CI 上无缓存 → 70 秒 → 120 秒超时。
+
+       需要全量列表的场景（搜索、下拉）自己走 symbols.resolve()。
     """
     try:
         import symbols as _sym
-        n = _sym.display_name(market, symbol)
-        # display_name 查不到时会原样返回代码，这时再试一次内置表
-        if n and n != symbol:
+        n = _sym.cached_name(market, symbol)
+        if n:
             return n
-    except Exception:
+    except Exception:                                   # noqa: BLE001
         pass
     return SYMBOL_NAMES.get(symbol.upper() if market == "crypto" else symbol, symbol)
 

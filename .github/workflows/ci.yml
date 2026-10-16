@@ -100,12 +100,8 @@ jobs:
           npm --prefix mcp ci --no-audit --no-fund
           npm --prefix mcp test
 
-      # 见文件头说明 (4)：可选，允许失败
-      - name: 独立测试套件 quant/tests（可选，允许失败）
-        continue-on-error: true
-        run: |
-          if [ -f quant/tests/run.py ]; then
-            python quant/tests/run.py
-          else
-            echo "quant/tests/run.py 不存在，跳过"
-          fi
+      # ⚠️ 这里原来还有一步「独立测试套件 quant/tests（可选，允许失败）」。
+      #    现在 quant/tests/run.py 已经并入上面的「Python 自检（离线）」阻塞步骤
+      #    （见 tools/run-tests.mjs 的 PY_SUITES），再跑一遍是重复劳动，
+      #    而且它是「允许失败」的 —— 等于把真正该拦的东西放行了。
+      #    所以删掉这一步，让它只在阻塞步骤里跑。

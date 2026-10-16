@@ -71,7 +71,12 @@ const NODE = process.execPath;                 // 跑本脚本的 node 就是被
 const RULE = '='.repeat(74);
 const MAX_BUFFER = 64 * 1024 * 1024;
 const PY_TIMEOUT_MS = 120000;                  // 离线套件实测 < 1s，留足余量
-const NET_TIMEOUT_MS = 600000;                 // symbols 首次枚举实测约 98s
+// 联网套件的超时。
+// ⚠️ symbols.py --selftest 在**缓存缺失**时（干净检出的 CI）会枚举 51997 个
+//    代码，实测 113.80s —— 压在原来的 120s 上，很容易假超时。
+//    它本身是有缓存的（TTL 12 小时），所以只有第一次跑才慢。
+//    给到 300s：够慢机器跑完，又不会把 CI 挂住太久。
+const NET_TIMEOUT_MS = 300000;
 const NODE_TIMEOUT_MS = 300000;
 
 const USAGE = `quant-spider 统一测试入口
@@ -198,7 +203,15 @@ function main(argv) {
         timeout: s.network ? NET_TIMEOUT_MS : PY_TIMEOUT_MS,
       });
       const counts = parseCounts(r.stdout) || parseCounts(r.output) || { pass: 0, fail: 0 };
-      const ok = r.ok && counts.fail === 0;
+      // ★ 标了「离线」却真的联网 → 判失败（不管退出码）
+      const netHits = s.network ? [] : detectNetworkActivity(r.output || r.stdout);
+      const ok = r.ok && counts.fail === 0 && netHits.length === 0;
+      if (netHits.length > 0) {
+        console.log('    [NET] 声明离线却检测到联网行为：');
+        for (const h of netHits) console.log(`        · ${h}`);
+        console.log('      这类问题在本地测不出来（本地已有缓存），');
+        console.log('      但在干净检出的 CI 上会变成超时。见 quant/tests/run.py 的说明。');
+      }
       results.push({ kind: 'python', ...s, cmdline, ...r, counts, ok });
       reportLine(ok, s, counts, r, opt.verbose);
     }
@@ -335,6 +348,40 @@ function reportLine(ok, suite, counts, r, verbose) {
       console.log('    └─');
     }
   }
+}
+
+// ── 离线套件的联网检测 ──────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
+//  为什么需要这个
+// ════════════════════════════════════════════════════════════════════════════
+//  quant/tests/run.py 声称「不联网：不调用 datasource.fetch() / quote()，
+//  全部用构造数据」—— 但 test_paper_live 里有个用例调了 paper_live.symbol_name()，
+//  而那个函数会走 symbols.resolve() → _ashare_index()，在**缓存缺失**时
+//  枚举 51997 个代码、耗时约 70 秒。
+//
+//  本地测不出来：symbols-cache.json（997KB，被 .gitignore 排除）已经在本地了。
+//  CI 干净检出必然没有缓存 → 必然触发 → 撞 120 秒超时 → CI 挂。
+//
+//  所以这里主动嗅探离线套件的输出，发现联网痕迹直接判失败 ——
+//  在本地就把问题拦下来，而不是等 CI 超时。
+const NETWORK_SMELL = [
+  [/(?:正在)?枚举全量/, '正在枚举全量标的列表'],
+  [/已找到\s+\d+\s*只/, '正在逐页扫描标的（全量枚举的进度输出）'],
+  [/connections?\s+attempt|Max retries exceeded/i, '正在重试网络连接'],
+  [/urlopen error|Temporary failure in name resolution|nodename nor servname/i,
+    'DNS / 网络解析失败（说明真的发了请求）'],
+  [/^\s*(?:Downloading|Fetching)\s+/im, '正在下载远程资源'],
+];
+
+function detectNetworkActivity(text) {
+  const t = String(text || '');
+  if (!t) return [];
+  const hits = [];
+  for (const [re, why] of NETWORK_SMELL) {
+    const m = t.match(re);
+    if (m) hits.push(`${why} —— 输出里出现 ${JSON.stringify(m[0].slice(0, 50))}`);
+  }
+  return hits;
 }
 
 // ── 断言计数解析 ────────────────────────────────────────────────────────────
