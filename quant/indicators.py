@@ -257,11 +257,30 @@ def adx(high, low, close, n: int = 14):
 
 
 def stochastic(high, low, close, n: int = 14, d: int = 3):
-    """KDJ 的 K/D（国内习惯用 1/3 平滑；这里用 SMA(d) 版本，更通用）。"""
+    """
+    KDJ 的 K/D（国内习惯用 1/3 平滑；这里用 SMA(d) 版本，更通用）。
+
+    ⚠️ 预热期必须返回 NaN，不能返回 50。
+       原实现是 `np.where(hh > ll, (close-ll)/(hh-ll)*100, 50.0)` ——
+       窗口未满时 rolling_max/min 给 NaN，`NaN > NaN` 为 False，
+       于是走"否则"分支填 **50**。后果：
+         · K 从下标 2 起就有值（不是 n-1=13），
+           任何用"KDJ 有值"判断数据够不够的逻辑都会误判
+         · 前 13 根的人造 50 会被下游当成"真实的中性读数"
+       （verifier 发现。）
+
+       现在显式要求 hh/ll 都是有限数且 hh > ll 才计算；否则留 NaN。
+       注意"hh == ll"（区间内完全没波动）确实是 50 —— 那是**真实**的
+       中性状态，不是预热占位，所以保留 50。
+    """
     hh = rolling_max(high, n)
     ll = rolling_min(low, n)
     with np.errstate(divide="ignore", invalid="ignore"):
-        rsv = np.where(hh > ll, (close - ll) / (hh - ll) * 100.0, 50.0)
+        span = hh - ll
+        valid = np.isfinite(hh) & np.isfinite(ll) & np.isfinite(close)
+        # 有波动 → 正常 RSV；无波动但数据有效（hh==ll）→ 真实中性 50
+        rsv = np.where(valid & (span > 0), (close - ll) / span * 100.0,
+                       np.where(valid, 50.0, np.nan))
     k = sma(rsv, d)
     dd = sma(k, d)
     return k, dd

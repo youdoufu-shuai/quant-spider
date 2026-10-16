@@ -356,11 +356,17 @@ def score_factors(ind, i: int) -> tuple[dict, float, str]:
         f["position"] = _clamp(1.0 - 2.0 * pctb)
 
     # 量能：放量本身不指示方向（既可能突破也可能出货），
-    # 所以只用「量比偏离 1 的程度」去增强当前趋势方向的可信度
+    # 所以只用「量比偏离 1 的程度」去增强当前趋势方向的可信度。
+    #
+    # ⚠️ trend 缺失时**不能**把 base 当 0 然后走 `base >= 0` 分支 ——
+    #    那会给一个方向未知的放量打上 +1（看多）。趋势算不出来时
+    #    方向就是未知的，此时量能因子应该**缺席**，而不是猜一个方向。
+    #    （verifier 发现：原实现 base 默认 0.0，符号取 `>= 0` 恒为 +1。）
     if vol is not None and vma and vma > 0:
-        ratio = vol / vma
-        base = f.get("trend", 0.0)
-        f["volume"] = _clamp(_clamp((ratio - 1.0) * 2.0) * (1 if base >= 0 else -1))
+        base = f.get("trend")
+        if base is not None:
+            ratio = vol / vma
+            f["volume"] = _clamp(_clamp((ratio - 1.0) * 2.0) * (1 if base > 0 else -1))
 
     if not f:
         return {}, 0.0, "未知"

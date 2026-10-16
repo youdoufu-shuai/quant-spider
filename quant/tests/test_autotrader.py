@@ -281,22 +281,25 @@ class TestScoreFactors(TestCase):
         self.near(_v(StubInd(100.0, series_volume=2000.0), "volume", 0), 2000.0, 1e-12,
                   "volume 在 bars 里 → 取得到")
 
-    def test_volume_factor_defaults_to_bullish_without_trend(self):
+    def test_volume_factor_absent_without_trend(self):
         """
-        对抗性发现（真实行为）：量能因子的方向取自 `base = f.get("trend", 0.0)`，
-        再用 `1 if base >= 0 else -1` 决定符号。**没有趋势因子时 base 默认 0.0**，
-        于是符号是 +1 —— 一个方向未知的量能信号被当成看多。
+        ✅ 修正后（2026-10-16）：没有 trend 因子时，量能因子**缺席**，
+        不再默认看多。
 
-        实测：只有 reversion（中性）与 volume（+1）时，总分为正。
-        影响很小（volume 权重只有 0.5，且需要放量才非零），但语义上是不对称的：
-        「方向不明朗」被默认解读为「向上」。
+        原行为（对抗性发现）：方向取自 `base = f.get("trend", 0.0)`，
+        再用 `1 if base >= 0 else -1` 决定符号。没有趋势因子时 base 默认 0.0，
+        于是符号恒为 +1 —— 一个方向未知的量能信号被当成看多，
+        把总分推向买入侧。
+
+        现在：base 为 None 时直接不设置 volume 因子。方向未知就不猜方向。
         """
         ind = StubInd(0.0, series_volume=2000.0, volume_ma20=1000.0, rsi=50.0)
         f, s, _ = score_factors(ind, 0)
         self.true("trend" not in f, "没有尺度 → trend 因子缺失")
-        self.near(f["volume"], 1.0, 1e-12,
-                  "缺 trend 时 base 默认 0 → 符号取正 → volume = +1（看多）")
-        self.true(s > 0, f"于是总分被推向看多（{s:+.4f}），尽管方向其实未知")
+        self.true("volume" not in f,
+                  f"缺 trend 时量能因子缺席（不再默认看多），实际因子={list(f)}")
+        self.near(s, 0.0, 1e-12,
+                  f"只有中性的 reversion → 总分为 0（{s:+.4f}），不被推向看多")
 
     def test_volume_factor_missing_when_ma_is_zero(self):
         ind = StubInd(100.0, volume=2000.0, volume_ma20=0.0, atr=10.0, rsi=50.0)
@@ -982,7 +985,9 @@ declare_counts({
                          "test_position_pctb_hand_computed": (3, 3),
                          "test_position_zero_variance_band_is_skipped": (1, 1),
                          "test_volume_factor_follows_trend_direction": (4, 4),
-                         "test_volume_factor_defaults_to_bullish_without_trend": (3, 3),
+                         # 2026-10-16：用例改名 —— 修正后缺 trend 时量能因子缺席，
+                        # 不再默认看多
+                        "test_volume_factor_absent_without_trend": (3, 3),
                          "test_volume_lookup_requires_series_bars": (2, 2),
                          "test_volume_factor_missing_when_ma_is_zero": (1, 1),
                          "test_all_factors_missing_returns_zero": (3, 3),
