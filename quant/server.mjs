@@ -21,7 +21,7 @@
  */
 
 import http from 'node:http';
-import { execFile } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,10 +29,50 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, '..');
 
-const PYTHON = process.env.QUANT_PYTHON
-  || String.raw`C:\Users\24942\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe`;
+// ── Python 解释器探测 ────────────────────────────────────────
+// ⚠️ 不要写死开发机的绝对路径。
+//    最初这里是 String.raw`C:\Users\24942\...\python.exe` —— 只在那台机器上能跑，
+//    别人 clone 下来直接起不来，Docker 里也得靠 ENV 覆盖。
+//    现在按顺序探测：环境变量 → 当前运行的 Python → 平台常规命令名。
+const PYTHON_CANDIDATES = [
+  process.env.QUANT_PYTHON,
+  process.env.PYTHON,
+  // Windows 上通常叫 python，类 Unix 上通常叫 python3
+  process.platform === 'win32' ? 'python' : 'python3',
+  'python3',
+  'python',
+].filter(Boolean);
+
+/** 探测第一个可用的 Python。返回 null 表示都没找到。 */
+function detectPython() {
+  for (const cand of PYTHON_CANDIDATES) {
+    try {
+      // 只做一次极轻量的探测，避免启动时卡住
+      const r = spawnSync(cand, ['-c', 'import sys;print(sys.version_info[0])'], {
+        encoding: 'utf8', timeout: 5000,
+      });
+      if (r.status === 0 && String(r.stdout).trim().startsWith('3')) return cand;
+    } catch { /* 试下一个 */ }
+  }
+  return null;
+}
+
+const PYTHON = detectPython();
+if (!PYTHON) {
+  console.error('❌ 找不到可用的 Python 3。');
+  console.error('   请安装 Python 3.10+，或用环境变量指定：');
+  console.error('     QUANT_PYTHON=/usr/bin/python3   （或 Windows 上的完整路径）');
+  process.exit(1);
+}
+
 const PIPELINE = path.join(here, 'pipeline.py');
 const PORT = Number(process.env.QUANT_PORT || 4400);
+
+// 监听地址可配置。
+// ⚠️ 默认只监听回环地址 —— 这是**安全默认值**：本地工具不该默认暴露到局域网。
+//    Docker 里需要 0.0.0.0 才能让 -p 端口转发生效，所以允许覆盖，
+//    但覆盖时会在启动日志里明确警告。
+const HOST = process.env.QUANT_HOST || '127.0.0.1';
 const CACHE_TTL_MS = Number(process.env.QUANT_TTL || 20000);
 
 const TYPES = {
@@ -362,6 +402,58 @@ const server = http.createServer(async (req, res) => {
     // A 股 6741 只、加密 511 对，不可能全塞进 <select>（会卡死浏览器）。
     // 所以下拉只给常用项，其余走搜索。
     // ⚠️ 这些路由必须在 serveStatic 之前，否则会被当成静态文件路径 404。
+    // ── 参数优化 API ────────────────────────────────────────
+    // 优化可能要跑几秒到几十秒（每个参数组合都要回测两次：
+    // 训练集 + 验证集），所以单独走一条路由，不混进 /api/quant。
+    if (pathname.startsWith('/api/optimize')) {
+      const OPT = path.join(here, 'optimizer.py');
+      const reply = (code, obj) => {
+        res.writeHead(code, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(obj));
+      };
+
+      if (pathname === '/api/optimize/meta') {
+        // 哪些策略可优化、参数空间是什么 —— 毫秒级，不取行情
+        const probe = [
+          'import sys, json',
+          `sys.path.insert(0, r"${here}")`,
+          'from optimizer import PARAM_SPACE, default_params, tunable_params',
+          'from strategy import STRATEGIES',
+          'print(json.dumps({',
+          '  "space": PARAM_SPACE,',
+          '  "strategies": {k: v[0] for k, v in STRATEGIES.items()},',
+          '  "tunable": {k: tunable_params(k) for k in STRATEGIES},',
+          '  "defaults": {k: default_params(k) for k in STRATEGIES},',
+          '  "optimizable": sorted(PARAM_SPACE.keys()),',
+          '}, ensure_ascii=False))',
+        ].join('\n');
+        const r = await runPython('-c', [probe], 30000).catch(e => ({ error: String(e.message || e) }));
+        reply(r.error ? 500 : 200, r);
+        return;
+      }
+
+      if (pathname === '/api/optimize' && req.method === 'POST') {
+        const b = await readBody(req);
+        const args = [
+          '--market', String(b.market || 'ashare'),
+          '--interval', String(b.interval || '1d'),
+          '--strategy', String(b.strategy || 'ema_cross'),
+          '--method', String(b.method || 'grid'),
+          '--max-combos', String(Math.max(4, Math.min(600, Number(b.maxCombos) || 80))),
+          '--limit', String(Math.max(120, Math.min(2000, Number(b.limit) || 500))),
+          '--is-ratio', String(Math.max(0.3, Math.min(0.9, Number(b.isRatio) || 0.7))),
+          '--json', '--compact',
+        ];
+        if (b.symbol) args.push('--symbol', String(b.symbol));
+        // 优化很慢：600 组 × 2 次回测可能超过 5 分钟，给足超时
+        const r = await runPython(OPT, args, 600000);
+        reply(r.error ? 400 : 200, r);
+        return;
+      }
+      reply(404, { error: '未知的优化接口: ' + pathname });
+      return;
+    }
+
     if (pathname.startsWith('/api/symbols/')) {
       const SYMBOLS_CLI = path.join(here, 'symbols.py');
       const market = String(url.searchParams.get('market') || 'ashare');
@@ -397,11 +489,17 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.log(`量化看板 → http://127.0.0.1:${PORT}/`);
-  console.log(`  模拟盘   http://127.0.0.1:${PORT}/paper.html`);
+server.listen(PORT, HOST, () => {
+  const shown = HOST === '0.0.0.0' ? '127.0.0.1' : HOST;
+  console.log(`量化看板 → http://${shown}:${PORT}/`);
+  console.log(`  专业图表 http://${shown}:${PORT}/pro.html`);
+  console.log(`  模拟盘   http://${shown}:${PORT}/paper.html`);
   console.log(`  Python   ${PYTHON}`);
-  console.log(`  管道     ${PIPELINE}`);
+  console.log(`  监听     ${HOST}:${PORT}`);
   console.log(`  缓存 TTL ${CACHE_TTL_MS} ms`);
+  if (HOST !== '127.0.0.1' && HOST !== 'localhost') {
+    console.log(`  ⚠ 已监听 ${HOST} —— 局域网内其他设备可以访问本看板。`);
+    console.log(`    本服务没有鉴权，仅在可信网络或容器里这样用。`);
+  }
   console.log(`  ⚠ 模拟盘：只读行情，无交易接口，不产生任何真实委托`);
 });

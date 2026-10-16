@@ -8,7 +8,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-f0ca57?style=flat-square" alt="License MIT"></a>
   <img src="https://img.shields.io/badge/Python-3.12-3776ab?style=flat-square&logo=python&logoColor=white" alt="Python 3.12">
   <img src="https://img.shields.io/badge/Node.js-20%2B-339933?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node 20+">
-  <img src="https://img.shields.io/badge/%E4%BE%9D%E8%B5%96-0-42d6a4?style=flat-square" alt="零依赖">
+  <img src="https://img.shields.io/badge/%E4%BE%9D%E8%B5%96-numpy%20%E5%94%AF%E4%B8%80-42d6a4?style=flat-square" alt="唯一依赖 numpy">
   <img src="https://img.shields.io/badge/%E5%AE%89%E5%85%A8-%E5%8F%AA%E8%AF%BB%E8%A1%8C%E6%83%85%EF%BC%8C%E4%B8%8D%E4%B8%8B%E5%8D%95-3b82f6?style=flat-square" alt="只读行情">
 </p>
 
@@ -120,7 +120,21 @@ A 股的真实约束都做了：T+1、100 股整手、涨跌停一字板买不�
 
 ## 快速开始
 
-需要 **Python 3.12+** 和 **Node.js 20+**。**零第三方依赖**，不用 `pip install` 也不用 `npm install`。
+需要 **Python 3.12+** 和 **Node.js 20+**。
+
+**依赖只有 numpy 一个**：
+
+```bash
+pip install numpy          # 唯一需要的第三方包
+```
+
+- **Node 侧零依赖** —— 不用 `npm install`（`mcp/` 子包除外，那个走 MCP SDK）
+- **Python 侧只用 numpy** —— 指标计算、回测、优化都基于它；没有 pandas、scipy、talib
+- 前端是原生 ES module + Canvas，无构建步骤
+
+> 为什么需要 numpy：`indicators.py` / `backtest.py` / `paper.py` / `strategy.py` /
+> `pipeline.py` / `autotrader.py` / `optimizer.py` 都在模块顶层 `import numpy`。
+> 纯 Python 实现这些指标会慢 30~100 倍，不值得。
 
 ```bash
 git clone https://github.com/<你的用户名>/<仓库名>.git

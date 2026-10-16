@@ -1,0 +1,21 @@
+# ============================================================================
+#  开发 / 测试 / CI 依赖
+# ----------------------------------------------------------------------------
+#  安装：pip install -r requirements-dev.txt
+#  CI  ：.github/workflows/ci.yml 里就是跑这条命令
+#
+#  为什么只有一个包：
+#    quant/*.py 在**模块顶层** import numpy，七个自检全都要它：
+#      indicators.py:40   backtest.py:49   paper.py:45
+#      strategy.py:49     pipeline.py:30   test_indicators.py:38
+#      autotrader.py:816  paper_live.py:943   （函数内 import，但照样需要）
+#    项目声称「零第三方依赖」—— 严格说这只对 Node / 前端成立，Python 侧不是。
+#
+#  为什么**没有**这些（都是实际 grep 确认过零 import 的）：
+#    · pytest  → quant/tests/harness.py 自带极小测试框架，刻意不引入
+#    · pandas  → 代码里零 import（布林带 ddof=0 是自己实现的，不依赖 pandas 默认值）
+#    · scipy / matplotlib / requests → 同样零 import，HTTP 走标准库 urllib
+#
+#  版本下限取 numpy 1.24（Python 3.12 能装到的最老一档），不锁上限。
+# ============================================================================
+numpy>=1.24

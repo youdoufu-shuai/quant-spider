@@ -1,0 +1,74 @@
+# ============================================================================
+#  quant-spider —— 项目元信息 + ruff 配置
+# ----------------------------------------------------------------------------
+#  ⚠ 这**不是**打包配置，本项目也不通过 pip / npm 分发：
+#     · 刻意没有 [build-system] —— 写了会让人以为可以 `pip install .`
+#     · Node 侧元信息在 package.json（零 npm 依赖）
+#     · 运行方式就是跑仓库里的脚本：node server.mjs / node quant/server.mjs
+#     · 写 [project] 是为了让 CI、编辑器、依赖扫描工具能读到版本与许可证
+#
+#  ⚠ 关于 dependencies = []（诚实声明）：
+#     README 与 package.json 说「零第三方依赖」——严格说这只对 Node / 前端成立。
+#     quant/indicators.py:40、backtest.py:49、paper.py:45、strategy.py:49、
+#     pipeline.py:30 都在模块顶层 import numpy，Python 侧确实需要一个第三方包。
+#     因为本项目不走安装流程（依赖由运行环境提供），dependencies 保持为空，
+#     把 numpy 显式放进 optional-dependencies 与 requirements-dev.txt。
+#     没有 pytest（quant/tests/harness.py 自带极小框架）、
+#     没有 pandas（代码里零 import）、没有 scipy。
+# ============================================================================
+
+[project]
+name = "quant-spider"
+version = "2.0.0"
+description = "真实行情量化看板 + Canvas 2D 蜘蛛过程可视化 / MCP 实时展示（Node 侧零依赖）"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = [
+  "quant",
+  "trading",
+  "backtest",
+  "paper-trading",
+  "technical-analysis",
+  "a-share",
+  "cryptocurrency",
+  "canvas",
+  "visualization",
+  "mcp",
+]
+dependencies = []
+
+[project.optional-dependencies]
+# 量化模块在 import 层面的硬依赖；前端 / 蜘蛛 UI 不需要
+quant = ["numpy>=1.24"]
+
+[project.urls]
+Repository = "https://github.com/youdoufu-shuai/quant-spider"
+Issues = "https://github.com/youdoufu-shuai/quant-spider/issues"
+
+# ============================================================================
+#  ruff 配置 —— 只声明，不安装。
+#  ⚠ 本机没有 ruff（`ruff --version` 不被识别），所以这份配置**没有实测过 lint 结果**，
+#    规则集刻意选得保守（pycodestyle + pyflakes），免得一份没人跑过的严格配置在别人
+#    机器上炸出一堆噪音。想加规则请先本地 `pip install ruff && ruff check .` 再改。
+# ============================================================================
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = [
+  "quant/state",     # 本机状态与 1 MB 标的缓存，不是源码
+  "quant/tests",     # 另一条工作流正在写，不归这份配置管
+  ".shot-profile",   # headless Chrome profile
+  ".vc",
+  "exports",
+  "node_modules",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = [
+  "E501",  # 行超长：中文注释与自检输出本来就长，实测普遍超 120
+  "E402",  # 模块级 import 不在文件顶部：quant/tests/run.py 要先改 sys.path
+  "E741",  # 变量名 l / I / O 有歧义：行情代码里 l 通常表示 low
+]

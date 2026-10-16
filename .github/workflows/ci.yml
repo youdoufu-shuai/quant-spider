@@ -1,0 +1,111 @@
+# ============================================================================
+#  quant-spider CI
+# ----------------------------------------------------------------------------
+#  触发：push 到 main + 所有 pull_request
+#  矩阵：ubuntu-latest × Node 20 / 22，Python 固定 3.12
+#
+#  设计取舍（都是本机实测后定的，别照着「看起来更严格」改回去）：
+#
+#  1) Python 侧需要一个第三方包：numpy。
+#     项目 README / package.json 说「零第三方依赖」——严格说只对 Node 与前端成立。
+#     quant/indicators.py:40、backtest.py:49、paper.py:45、strategy.py:49、
+#     pipeline.py:30 都在模块顶层 import numpy，缺它自检直接 ImportError。
+#     pandas 装了但代码里没有任何 import（布林带的 ddof=0 是自己实现的）；
+#     pytest / scipy 都不需要：quant/tests/harness.py 自带极小测试框架。
+#
+#  2) datasource.py / symbols.py 两套自检是联网的，做成非阻塞。
+#     实测它们会真的请求新浪行情源；symbols 首次运行还要枚举 8265 只 A 股 +
+#     511 个币对（本机实测 98s），而缓存文件 quant/state/symbols-cache.json 被
+#     .gitignore 排除 —— 干净检出时必然不存在，所以 CI 里每次都是「首次」。
+#     这属于外部服务可用性，不是代码回归，不该阻塞合并。
+#     本地想严格判定：node tools/run-tests.mjs --strict
+#
+#  3) mcp/tests/protocol.test.mjs 也被排除在阻塞之外。
+#     它依赖 @modelcontextprotocol/server + zod（要 npm 安装），测试内部还会再跑一次
+#     「干净安装」。本机实测（沙箱里 npm 不在 PATH 上）：3 个用例 2 通过 / 1 失败，
+#     失败原因正是 Clean MCP install failed。既慢又依赖网络，同样不阻塞。
+#
+#  4) 另一个工作流正在写 quant/tests/（独立测试套件，自带 run.py 入口）。
+#     它不在本次改动范围内、最终布局未知，所以只做「存在就跑、没有就跳过、
+#     失败不阻塞」的可选步骤，避免两条线互相拖累。
+# ============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# 同一分支连续推送时取消上一次未完成的运行
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Node ${{ matrix.node }} · Python 3.12
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: 安装 Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # 见文件头说明 (1)：Python 侧只缺 numpy
+      - name: 安装 Python 依赖（仅 numpy）
+        run: python -m pip install --disable-pip-version-check --no-input -r requirements-dev.txt
+
+      # 所有 .mjs（含 mcp/ 与 tools/）+ app/*.html、quant/web/*.html 里的内联
+      # <script type="module">。内联脚本走 `node --check --input-type=module -`
+      # 从 stdin 读，不落临时文件。
+      - name: 语法检查
+        run: node tools/run-tests.mjs --syntax-only
+
+      # 与 package.json 的 `npm test` 同一批文件（7 个）。bash 会展开 glob。
+      # 跨平台等价命令：node tools/run-tests.mjs --node-only
+      - name: Node 单元测试（7 个文件）
+        run: node --test tests/*.test.mjs
+
+      # 6 套离线自检，224 项断言。运行器会把每个套件的完整命令行打进日志，
+      # 等效于逐条手写 `python quant/xxx.py --selftest`。
+      - name: Python 自检（离线 6 套）
+        run: node tools/run-tests.mjs --python-only --offline
+
+      # 见文件头说明 (2)：2 套联网自检，32 项断言，允许失败
+      - name: Python 自检（联网 2 套，允许失败）
+        continue-on-error: true
+        run: node tools/run-tests.mjs --python-only --network-only
+
+      # 见文件头说明 (3)：需要 npm 安装依赖 + 网络，允许失败
+      - name: MCP 协议测试（需要 npm + 网络，允许失败）
+        continue-on-error: true
+        run: |
+          npm --prefix mcp ci --no-audit --no-fund
+          npm --prefix mcp test
+
+      # 见文件头说明 (4)：可选，允许失败
+      - name: 独立测试套件 quant/tests（可选，允许失败）
+        continue-on-error: true
+        run: |
+          if [ -f quant/tests/run.py ]; then
+            python quant/tests/run.py
+          else
+            echo "quant/tests/run.py 不存在，跳过"
+          fi

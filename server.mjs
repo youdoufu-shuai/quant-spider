@@ -78,10 +78,20 @@ export function createDemoServer({ root = projectRoot } = {}) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT || 4317);
+  // 监听地址可配置。默认只监听回环 —— 本地演示工具不该默认暴露到局域网。
+  // 容器里需要 0.0.0.0 才能让 -p 端口转发生效，所以允许覆盖并给出警告。
+  const host = process.env.HOST || '127.0.0.1';
   const server = createDemoServer();
   server.on('error', error => {
     console.error(error.code === 'EADDRINUSE' ? `Port ${port} is busy. Set PORT to another port and run npm start.` : error.message);
     process.exitCode = 1;
   });
-  server.listen(port, '127.0.0.1', () => console.log(`Prompt Spider UI → http://127.0.0.1:${server.address().port}\nLocal Canvas demo. Ctrl+C to stop.`));
+  server.listen(port, host, () => {
+    const shown = host === '0.0.0.0' ? '127.0.0.1' : host;
+    console.log(`Prompt Spider UI → http://${shown}:${server.address().port}`);
+    console.log('Local Canvas demo. Ctrl+C to stop.');
+    if (host !== '127.0.0.1' && host !== 'localhost') {
+      console.log(`  ⚠ Listening on ${host} — reachable from your local network. No auth.`);
+    }
+  });
 }

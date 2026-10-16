@@ -1,0 +1,85 @@
+# ============================================================================
+#  docker build 上下文排除清单
+# ----------------------------------------------------------------------------
+#  目标：镜像里只留「跑起来需要的东西」。项目零 npm 依赖，所以不需要排除后重装。
+#  注意：被 .gitignore 排除的目录**不会**自动从 docker 上下文排除，必须在这里再写一遍。
+# ============================================================================
+
+# ── 版本库与 CI 元数据 ──────────────────────────────────────────────────────
+.git
+.gitattributes
+.gitignore
+.github
+
+# ── 依赖目录（本地跑过 npm 才会有；镜像里不需要） ──────────────────────────
+node_modules
+**/node_modules
+
+# ── 本机数据 / 记录 / 被忽略的产物 ─────────────────────────────────────────
+.shot-profile
+.vc
+.shots
+.shots2
+.shot3
+.pp
+.pp2
+.ppf
+.nav
+.nav2
+.qb
+.fix1
+.t1
+.t2
+.live-pg
+exports
+reference
+research
+output
+scripts
+docs
+
+# ── 量化模块的本机状态（**必须排除**） ─────────────────────────────────────
+#   quant/state/paper-sessions.json  含个人模拟盘持仓、成交与运行日志
+#   quant/state/symbols-cache.json   约 1 MB 的标的目录缓存（12 小时 TTL）
+#   两者都不该进镜像。代码自己会重建目录：
+#     paper_live.py:891  self.path.parent.mkdir(parents=True, exist_ok=True)
+#     symbols.py:107     CACHE_DIR.mkdir(parents=True, exist_ok=True)
+#   所以排除掉不会让容器启动失败（已核对这两处源码）。
+quant/state
+
+# ── Python 缓存 ────────────────────────────────────────────────────────────
+__pycache__
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.ruff_cache
+
+# ── 备份 / 临时 / 日志 / 凭据 ──────────────────────────────────────────────
+*.bak
+*.tmp
+*.log
+.env
+.env.*
+
+# ── 影音素材（仓库本身就不发布） ───────────────────────────────────────────
+*.mp4
+*.m4v
+*.mov
+*.webm
+*.mkv
+*.avi
+*.wmv
+*.flv
+*.mpeg
+*.mpg
+*.m3u8
+*.mp3
+*.wav
+*.m4a
+*.flac
+*.ogg
+*.zip
+*.7z
+*.tar
+*.gz
