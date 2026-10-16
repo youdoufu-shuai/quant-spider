@@ -460,16 +460,19 @@ def _selftest() -> int:
 
     # --- 2. 脱敏：最关键的一条 ---
     print("\n[2] 密钥脱敏（安全关键）")
-    st.save({"api_key": "sk-abcdefghijklmnopqrstuvwxyz1234"})
+    # ⚠️ 用一眼可辨的假密钥，别用高熵字符串 ——
+    #    否则密钥扫描工具会一直把它当真实泄露报出来（踩过）。
+    FAKE = "sk-FAKE-not-a-real-key-0000-DO-NOT-USE-9999"
+    st.save({"api_key": FAKE})
     pv = st.settings.public_view()
     blob = json.dumps(pv, ensure_ascii=False)
-    check("public_view 不含密钥原值",
-          "abcdefghijklmnopqrstuvwxyz" not in blob)
-    check("public_view 不含完整密钥", "sk-abcdefghijklmnopqrstuvwxyz1234" not in blob)
+    check("public_view 不含密钥原值", FAKE not in blob)
+    check("public_view 不含密钥中段",
+          "not-a-real-key" not in blob)
     check("apiKeySet 为 True", pv["apiKeySet"] is True)
     check("有脱敏提示", pv["apiKeyHint"] != "", pv["apiKeyHint"])
-    check("提示保留了尾部 4 位", pv["apiKeyHint"].endswith("1234"), pv["apiKeyHint"])
-    check("提示不含中间部分", "ghijklmnop" not in pv["apiKeyHint"])
+    check("提示保留了尾部 4 位", pv["apiKeyHint"].endswith("9999"), pv["apiKeyHint"])
+    check("提示不含中段", "real-key" not in pv["apiKeyHint"])
 
     st2 = AIStore(tmpdir / "b.json")
     st2.save({"api_key": "short"})
@@ -478,9 +481,9 @@ def _selftest() -> int:
 
     # --- 3. 空字符串 = 不修改 ---
     print("\n[3] 空密钥不覆盖已存密钥")
-    st.save({"api_key": "sk-original-key-1234567890"})
+    st.save({"api_key": "sk-FAKE-original-0000-0000"})
     st.save({"model": "deepseek-reasoner", "api_key": ""})
-    check("改模型不会清掉密钥", st.settings.api_key == "sk-original-key-1234567890",
+    check("改模型不会清掉密钥", st.settings.api_key == "sk-FAKE-original-0000-0000",
           st.settings.api_key[:10] + "…")
     check("模型确实改了", st.settings.model == "deepseek-reasoner")
     st.save({"clearApiKey": True})
@@ -531,7 +534,7 @@ def _selftest() -> int:
     check("缺密钥 → 不 ready", stt["ready"] is False)
     check("说明了缺密钥", any("API Key" in p for p in stt["problems"]),
           str(stt["problems"]))
-    st5.save({"api_key": "sk-test-key-1234567890"})
+    st5.save({"api_key": "sk-FAKE-testkey-0000-0000"})
     stt2 = st5.status()
     check("补齐后 ready", stt2["ready"] is True, str(stt2["problems"]))
     st5.save({"enabled": False})

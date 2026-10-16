@@ -249,81 +249,6 @@
       </div>
     </div>
 
-    <!-- AI 配置 -->
-    <div class="card" id="aiCard">
-      <h2>
-        <span>AI 决策配置</span>
-        <span style="display:flex;gap:8px;align-items:center">
-          <span class="mut" id="aiBadge">—</span>
-          <button id="aiToggle" style="padding:1px 8px">展开</button>
-        </span>
-      </h2>
-      <div class="body" id="aiBody" style="display:none">
-        <div class="row">
-          <label class="f" style="min-width:150px">供应商
-            <select id="aiProvider"></select>
-          </label>
-          <label class="f">模型
-            <input id="aiModel" list="aiModelList" placeholder="留空用默认"
-                   style="width:170px" autocomplete="off">
-            <datalist id="aiModelList"></datalist>
-          </label>
-          <label class="f" style="min-width:170px">API Key
-            <input id="aiKey" type="password" placeholder="留空 = 不修改"
-                   style="width:170px" autocomplete="new-password">
-          </label>
-          <label class="f">超时(秒)
-            <input id="aiTimeout" type="number" min="3" max="300" step="1"
-                   style="width:66px">
-          </label>
-          <label class="f">温度
-            <input id="aiTemp" type="number" min="0" max="2" step="0.1"
-                   style="width:60px">
-          </label>
-        </div>
-
-        <div class="row" style="margin-top:9px">
-          <label class="f" style="flex:1;min-width:260px">接口地址
-            <input id="aiUrl" placeholder="留空用供应商默认"
-                   style="width:100%" autocomplete="off">
-          </label>
-        </div>
-
-        <div class="row" style="margin-top:9px">
-          <label class="f" style="flex:1;min-width:260px">
-            <span>系统提示词
-              <button id="aiPromptReset" style="padding:0 6px;font-size:10px">恢复默认</button>
-            </span>
-            <textarea id="aiPrompt" rows="4"
-              style="width:100%;background:#191a1e;color:var(--text);
-                     border:1px solid var(--border);border-radius:3px;
-                     padding:6px;font:11px/1.6 Consolas,monospace;resize:vertical"
-              placeholder="留空使用内置提示词"></textarea>
-          </label>
-        </div>
-
-        <div class="row" style="margin-top:9px;align-items:center">
-          <label class="f" style="flex-direction:row;align-items:center;gap:6px">
-            <input id="aiEnabled" type="checkbox" style="width:auto">
-            <span>允许使用 AI 模式</span>
-          </label>
-          <span class="spacer"></span>
-          <button id="aiTest">测试连接</button>
-          <button id="aiSave" class="primary">保存</button>
-        </div>
-
-        <div id="aiResult" style="margin-top:9px"></div>
-
-        <div class="note" id="aiNote">
-          <b>密钥不会回显</b>：保存后只显示 <code>sk-xxx…abcd</code> 这样的提示，
-          原值只存在于本机 <code>quant/state/ai-config.json</code>（已在 .gitignore 里）。
-          <br>API Key 输入框<b>留空 = 不修改</b>；要清除请点「清除密钥」。
-          <br><b>AI 的输出只是建议</b> —— 风控层独立生效，
-          AI 说"满仓"也不能突破最大仓位，说"不卖"也会被止损强制平仓。
-        </div>
-      </div>
-    </div>
-
     <!-- 决策解释 -->
     <div class="card">
       <h2><span>决策解释</span><span class="mut" id="decMeta">—</span></h2>
@@ -405,6 +330,91 @@
       </div>
       <div class="body scroll" id="detail" style="padding:0 12px 12px">
         <div class="mut" style="padding:20px 0;text-align:center">选择账户后显示</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════ AI 配置（跨满整行）══════════ -->
+  <!--
+    为什么放在两列之外：
+    原来它跟在左列里，而左列是 grid 的固定 370px —— 一个要填 URL、
+    提示词、密钥的表单挤在 370px 里几乎没法用（实测卡片只有 386px 宽）。
+    配置面板需要横向空间，所以移出来用 grid-column 跨两列。
+    窄屏（<1150px）时 #wrap 变单列，它自然就是整宽。
+  -->
+  <div class="card" id="aiCard" style="grid-column:1/-1">
+    <h2>
+      <span>AI 决策配置</span>
+      <span style="display:flex;gap:8px;align-items:center">
+        <span class="mut" id="aiBadge">—</span>
+        <button id="aiToggle" style="padding:1px 8px">展开</button>
+      </span>
+    </h2>
+    <div class="body" id="aiBody" style="display:none">
+      <div class="row">
+        <label class="f" style="min-width:150px">供应商
+          <select id="aiProvider"></select>
+        </label>
+        <label class="f">模型
+          <input id="aiModel" list="aiModelList" placeholder="留空用默认"
+                 style="width:180px" autocomplete="off">
+          <datalist id="aiModelList"></datalist>
+        </label>
+        <label class="f" style="min-width:190px">API Key
+          <input id="aiKey" type="password" placeholder="留空 = 不修改"
+                 style="width:190px" autocomplete="new-password">
+        </label>
+        <label class="f">超时(秒)
+          <input id="aiTimeout" type="number" min="3" max="300" step="1"
+                 style="width:70px">
+        </label>
+        <label class="f">温度
+          <input id="aiTemp" type="number" min="0" max="2" step="0.1"
+                 style="width:64px">
+        </label>
+        <button id="aiClearKey" title="清除已保存的密钥">清除密钥</button>
+      </div>
+
+      <div class="row" style="margin-top:9px">
+        <label class="f" style="flex:1;min-width:320px">接口地址
+          <input id="aiUrl" placeholder="留空用供应商默认"
+                 style="width:100%" autocomplete="off">
+        </label>
+      </div>
+
+      <div class="row" style="margin-top:9px">
+        <label class="f" style="flex:1;min-width:320px">
+          <span>系统提示词
+            <button id="aiPromptReset" style="padding:0 6px;font-size:10px">恢复默认</button>
+          </span>
+          <textarea id="aiPrompt" rows="4"
+            style="width:100%;background:#191a1e;color:var(--text);
+                   border:1px solid var(--border);border-radius:3px;
+                   padding:6px;font:11px/1.6 Consolas,monospace;resize:vertical"
+            placeholder="留空使用内置提示词"></textarea>
+        </label>
+      </div>
+
+      <div class="row" style="margin-top:9px;align-items:center">
+        <label class="f" style="flex-direction:row;align-items:center;gap:6px">
+          <input id="aiEnabled" type="checkbox" style="width:auto">
+          <span>允许使用 AI 模式</span>
+        </label>
+        <span class="spacer"></span>
+        <button id="aiTest">测试连接</button>
+        <button id="aiSave" class="primary">保存</button>
+      </div>
+
+      <div id="aiResult" style="margin-top:9px"></div>
+
+      <div class="note" id="aiNote">
+        <b>密钥不会回显</b>：保存后只显示 <code>sk-xxx…abcd</code> 这样的提示，
+        原值只存在于本机 <code>quant/state/ai-config.json</code>（整个
+        <code>quant/state/</code> 目录已在 .gitignore 里）。
+        <br>API Key 输入框<b>留空 = 不修改</b>；要清除请点「清除密钥」。
+        <br><b>AI 的输出只是建议</b> —— 风控层独立生效，
+        AI 说「满仓」也不能突破最大仓位，说「不卖」也会被止损强制平仓。
+        <br>详细说明与故障排查见 <code>AI配置说明.md</code>。
       </div>
     </div>
   </div>
@@ -557,6 +567,23 @@ async function bootAI() {
   $('aiSave').onclick = saveAI;
   $('aiTest').onclick = testAI;
   $('aiProvider').onchange = onProviderChange;
+  // 清除密钥必须**显式**操作 —— 输入框留空只是"不修改"，
+  // 否则用户改个模型名就会把密钥弄丢
+  $('aiClearKey').onclick = async () => {
+    if (!confirm('确定要清除已保存的 API Key 吗？（会同时关闭 AI 模式）')) return;
+    try {
+      const d = await symApi('/ai/settings', {
+        method: 'POST', body: { clearApiKey: true, enabled: false },
+      });
+      $('aiKey').value = '';
+      $('aiKey').placeholder = 'sk-…（必填）';
+      $('aiEnabled').checked = false;
+      renderAIBadge(d.status);
+      aiResult('warn', '已清除密钥并关闭 AI 模式。');
+    } catch (e) {
+      aiResult('err', '清除失败：' + esc(e.message));
+    }
+  };
   $('aiPromptReset').onclick = () => {
     $('aiPrompt').value = '';
     $('aiPrompt').placeholder = '留空使用内置提示词（推荐）';
