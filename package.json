@@ -5,10 +5,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/OWNER/quant-spider.git"
+    "url": "git+https://github.com/youdoufu-shuai/quant-spider.git"
   },
-  "bugs": { "url": "https://github.com/OWNER/quant-spider/issues" },
-  "homepage": "https://github.com/OWNER/quant-spider#readme",
+  "bugs": { "url": "https://github.com/youdoufu-shuai/quant-spider/issues" },
+  "homepage": "https://github.com/youdoufu-shuai/quant-spider#readme",
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
