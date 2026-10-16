@@ -97,3 +97,6 @@ lib/live-sessions.json
 .t1/
 .t2/
 .live-pg/
+
+# 临时提交信息文件（用 git commit -F 时产生，不该入库）
+.git-commit-msg.txt
