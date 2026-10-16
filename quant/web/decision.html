@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>决策蛛网 · Decision Web</title>
+<title>决策驾驶舱 · Decision Cockpit</title>
 <style>
   :root{
     --bg:#080909;--panel:#0e0e11;--panel2:#131317;--border:#24242a;
-    --text:#e8e8e9;--muted:#8b8b94;--accent:#f23c83;
+    --text:#e8e9e9;--muted:#8b8b94;--dim:#5a5a64;--accent:#f23c83;
     --up:#ef4b5e;--down:#3fbf8f;--warn:#f4cf4d;--ok:#48d6a4;
   }
   *{box-sizing:border-box}
@@ -42,7 +42,7 @@
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
   label.f{display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--muted)}
   table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{text-align:right;padding:4px 7px;border-bottom:1px solid #17171c;white-space:nowrap}
+  th,td{text-align:right;padding:4px 8px;border-bottom:1px solid #17171c;white-space:nowrap}
   th{color:var(--muted);font-weight:400;font-size:10px}
   th:first-child,td:first-child{text-align:left}
   td.num{font-variant-numeric:tabular-nums}
@@ -53,27 +53,65 @@
   .ok{color:var(--ok)}.mut{color:var(--muted)}
   #err{display:none;margin:0 14px;padding:9px 12px;border:1px solid var(--up);
     border-radius:4px;color:var(--up);background:#1a0d13;white-space:pre-wrap}
-  .stages{display:flex;gap:3px;flex-wrap:wrap;margin-top:9px}
-  .stages .s{flex:1;min-width:82px;padding:6px 8px;border:1px solid var(--border);
-    border-radius:3px;background:#0b0b0e;font-size:9.5px;line-height:1.5;
-    opacity:.35;transition:opacity .18s,border-color .18s}
-  .stages .s.on{opacity:1;border-color:var(--ok)}
-  .stages .s.act{opacity:1;border-color:var(--accent)}
-  .stages .s b{display:block;color:var(--text);font-weight:400;font-size:10px}
-  .stages .s span{color:var(--muted)}
-  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--muted);padding:3px 12px 8px}
-  .legend i{display:inline-block;width:10px;height:3px;vertical-align:middle;margin-right:4px}
-  @media (max-width:820px){
+
+  /* 一句话摘要 */
+  .headline{padding:12px 14px 4px;font-size:17px;font-weight:700;line-height:1.4}
+  .headline.up{color:var(--up)}
+  .headline.dn{color:var(--down)}
+  .headline.wn{color:var(--warn)}
+  .headline.mut{color:var(--muted)}
+
+  /* 风控否决时的解释条 */
+  .veto{margin:0 14px 12px;padding:8px 11px;border-radius:3px;
+    background:#1a0d13;border-left:2px solid var(--up);
+    color:var(--muted);font-size:10.5px;line-height:1.7}
+
+  /* 结论兜底：即使 canvas 出问题，HTML 也把答案说清楚 */
+  #fallback{display:grid;grid-template-columns:auto auto auto 1fr;gap:10px 22px;
+    align-items:baseline;padding:4px 14px 12px}
+  #fallback .big{font-size:28px;font-weight:700;line-height:1.1}
+  #fallback .kv{font-size:10px;color:var(--muted)}
+  #fallback .why{font-size:12px}
+  #fallback .why small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
+
+  .results{max-height:180px;overflow:auto;margin-top:8px;display:none;
+    border:1px solid var(--border);border-radius:3px;background:#0b0b0e}
+  .results.on{display:block}
+  .results .it{display:flex;justify-content:space-between;gap:8px;padding:5px 9px;
+    border-bottom:1px solid #17171c;cursor:pointer;font-size:11px}
+  .results .it:hover{background:#17171c}
+  .results .it b{font-weight:400}
+  .results .it .px{color:var(--muted);font-size:10px;white-space:nowrap}
+  .picked{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
+  .chip{padding:2px 8px;border:1px solid var(--border);border-radius:9px;
+    font-size:10px;color:var(--muted);cursor:pointer;white-space:nowrap}
+  .chip:hover{border-color:var(--accent);color:var(--text)}
+  .chip.cur{border-color:var(--accent);color:var(--text);background:#1a0d13}
+
+  /* 翻转子 —— HTML 版，比 canvas 更易读 */
+  .flip{display:grid;gap:7px;padding:10px 12px}
+  .flip .it{display:grid;grid-template-columns:64px 54px 1fr 150px;gap:10px;
+    align-items:center;padding:7px 9px;border-radius:3px;background:#0b0b0e;
+    border-left:2px solid var(--dim)}
+  .flip .it.done{border-left-color:var(--ok)}
+  .flip .it.near{border-left-color:var(--warn)}
+  .flip .it.far{border-left-color:var(--dim)}
+  .flip .it b{font-weight:400}
+  .flip .track{height:6px;background:#17171c;border-radius:3px;overflow:hidden}
+  .flip .track span{display:block;height:100%}
+
+  @media (max-width:900px){
     #wrap{padding:8px 9px 30px}
-    .stages .s{min-width:66px;font-size:9px}
+    #fallback{grid-template-columns:1fr 1fr}
+    .flip .it{grid-template-columns:1fr;gap:5px}
   }
 </style>
 </head>
 <body>
 
 <div id="top">
-  <h1>DECISION WEB</h1>
-  <div class="sub">决策蛛网</div>
+  <h1>DECISION COCKPIT</h1>
+  <div class="sub">决策驾驶舱</div>
   <span class="pill"><span class="dot" id="dot"></span><span id="status">加载中…</span></span>
   <span class="spacer"></span>
   <a href="/">看板</a>
@@ -84,6 +122,7 @@
 
 <div id="wrap">
 
+  <!-- 选标的 -->
   <div class="card">
     <div class="body">
       <div class="row">
@@ -99,25 +138,24 @@
           </select>
         </label>
         <button id="reload" class="primary">重新计算</button>
-        <button id="replayBtn">重演计算过程</button>
+        <button id="replayBtn">重演</button>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px">
           <input id="autoRefresh" type="checkbox" style="width:auto">
-          <span>每 60 秒自动刷新</span>
+          <span>每 60 秒刷新</span>
         </label>
       </div>
       <div class="row" style="margin-top:10px;align-items:center">
         <span class="mut" style="font-size:10px">持仓假设</span>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px">
           <input id="hasPos" type="checkbox" style="width:auto">
-          <span>假设已持仓（才能看到止损/止盈拦截）</span>
+          <span>假设已持仓（否则止损/止盈不会触发）</span>
         </label>
-        <label class="f" id="rowLoss" style="display:none">假设的浮动盈亏
-          <select id="pnlPreset" style="width:150px">
+        <label class="f" id="rowLoss" style="display:none">浮动盈亏
+          <select id="pnlPreset" style="width:158px">
             <option value="0">0%（不触发）</option>
             <option value="-0.12">−12%（触发止损 6%）</option>
             <option value="-0.08">−8%（触发止损）</option>
             <option value="0.25">+25%（触发止盈 20%）</option>
-            <option value="0.05">+5%（都不触发）</option>
           </select>
         </label>
         <label class="f" id="rowDD" style="display:none">账户回撤
@@ -133,44 +171,63 @@
     </div>
   </div>
 
+  <!-- ★ 结论：HTML 版，保证一定能看到答案 -->
   <div class="card">
-    <h2><span>决策蛛网</span><span class="mut" id="webMeta">—</span></h2>
-    <div class="chartbox"><canvas id="cvWeb"></canvas></div>
-    <div class="legend">
-      <span><i style="background:var(--up)"></i>看多</span>
-      <span><i style="background:var(--down)"></i>看空</span>
-      <span><i style="background:#5a5a64"></i>中性</span>
-      <span>丝的粗细 = 权重</span>
-      <span>丝上光点 = 贡献值 v×w</span>
-      <span>蜘蛛径向 = |分数|</span>
-      <span>蜘蛛朝向 = 动作</span>
-      <span>顶部张力弧 = 离阈值距离</span>
+    <h2><span>结论</span><span class="mut" id="verdictMeta">—</span></h2>
+    <!-- ★ 一句话摘要 —— 整页最该一眼看懂的东西 -->
+    <div id="headline" class="headline">—</div>
+    <div id="fallback">
+      <div><div class="kv">动作</div><div class="big" id="vAction">—</div></div>
+      <div><div class="kv">分数</div><div class="big" id="vScore">—</div></div>
+      <div><div class="kv">目标仓位</div><div class="big" id="vTarget">—</div></div>
+      <div class="why" id="vWhy">—</div>
     </div>
-    <div class="body" style="padding-top:0">
-      <div class="stages" id="stages"></div>
+    <!-- 风控否决时，结论区的分数（已清零）与瀑布图的分数（否决前）会不一致，
+         这里显式解释，免得以为页面算错了 -->
+    <div id="vetoNote" class="veto" style="display:none"></div>
+  </div>
+
+  <!-- 图：贡献瀑布 + 风控闸门 -->
+  <div class="card">
+    <h2><span>为什么是这个结论</span><span class="mut" id="cockpitHint">条越长影响越大</span></h2>
+    <div class="chartbox"><canvas id="cvCockpit"></canvas></div>
+  </div>
+
+  <!-- ★ 什么情况下会变 -->
+  <div class="card">
+    <h2><span>什么情况下会变</span>
+      <span class="mut" id="flipHint">把「还差多少」换算成主导因子要动几档</span></h2>
+    <div class="flip" id="flipBox"><span class="mut">—</span></div>
+    <div class="note" style="margin:0">
+      <b>这是这张页面最有用的一节。</b> 光知道「分数 −0.44」没法行动，
+      但知道「主导因子再涨 0.45 档就会开仓」就能盯着一个具体的东西。
+      <br>换算方式：主导因子每变动 1 档（从 −1 到 +1 的满档），
+      分数变动 = 该因子权重 ÷ 总权重。所以「还差多少分」÷「杠杆」= 「还要动几档」。
     </div>
   </div>
 
+  <!-- 因子分解表 -->
   <div class="card">
     <h2><span>因子分解</span><span class="mut" id="facMeta">—</span></h2>
     <div class="body" style="padding:0">
       <div class="tablewrap"><table id="facTable">
         <thead><tr>
           <th>因子</th><th>怎么算的</th><th>值</th><th>权重</th>
-          <th>贡献</th><th>占比</th><th>方向</th>
+          <th>贡献 v×w</th><th>对分数的影响</th><th>方向</th>
         </tr></thead>
         <tbody></tbody>
       </table></div>
       <div class="note" style="margin:0">
-        <b>权重不是固定的</b> —— 它随市场状态变。
-        趋势市里「趋势」权重 1.8、「超买超卖」只有 0.15；震荡市反过来（0.5 / 1.8）。
-        所以同一组因子值在不同状态下会得出不同结论，这是有意的。
-        <br><b>贡献 = 值 × 权重</b>，它才是真正推动分数的量。
-        实测里经常出现「裸值最大的因子贡献不是最大」——只看值会误判谁在主导决策。
+        <b>权重不是固定的</b> —— 随市场状态变。趋势市里「趋势」权重 1.8、
+        「超买超卖」0.15；震荡市反过来（0.5 / 1.8）。
+        <br><b>「贡献 v×w」和「对分数的影响」不一样</b>：
+        前者是原始加权值，后者已经除以总权重，能直接相加得到最终分数。
+        瀑布图画的是后者。
       </div>
     </div>
   </div>
 
+  <!-- 风控闸门（HTML 版，含解释） -->
   <div class="card">
     <h2><span>风控闸门</span><span class="mut" id="riskMeta">—</span></h2>
     <div class="body" style="padding:0">
@@ -179,59 +236,54 @@
         <tbody></tbody>
       </table></div>
       <div class="note" style="margin:0">
-        <b>风控优先于信号</b>：触发止损/止盈/移动止损/回撤熔断时强制平仓，
-        不看打分。蛛网里会看到<b>蜘蛛想冲向决策区却被闸门拦住</b> ——
-        那是最值得看的一帧，说明「信号要动，但风控不让」。
+        <b>风控优先于信号</b>：触发止损/止盈/移动止损/回撤熔断时强制平仓，不看打分。
+        <br>勾上「假设已持仓」并选一个亏损档位，就能看到<b>风控否决信号</b>的样子 ——
+        比如分数明明是看多，但动作变成「卖出」。
       </div>
     </div>
   </div>
 
+  <!-- 决策理由（原始推理链） -->
   <div class="card">
-    <h2>决策理由</h2>
+    <h2>推理链（引擎原样输出）</h2>
     <div class="body" id="reasons"><span class="mut">—</span></div>
   </div>
 
+  <!-- 怎么读 -->
   <div class="card">
-    <h2>怎么读这张图</h2>
+    <h2>怎么读这张页面</h2>
     <div class="body">
       <div class="note" style="border-left-color:var(--ok)">
-        <b>1. 量化流程本身就是一张网</b><br>
-        <code>6 因子 → 加权 → 分数 → 阈值 → 风控 → 仓位</code>。
-        蛛网画的就是这条链路，不是"K 线随时间爬"。<br><br>
+        <b>1. 先看「结论」</b><br>
+        动作、分数、目标仓位、以及<b>一句话原因</b>。
+        最上面那个框就是答案，不用往下找。<br><br>
 
-        <b>2. 每根丝是一个因子</b><br>
-        丝的<b>粗细</b>是它的权重（越大越有话语权），
-        <b>颜色</b>是方向，<b>光点</b>是贡献值 v×w。
-        光点越靠外、越亮，这一项对最终决策的推动越大。<br><br>
+        <b>2. 再看「为什么这个结论」</b><br>
+        瀑布图里每根条的长度 = 该因子对分数的<b>实际贡献</b>（值×权重÷总权重）。
+        条越长，越主导这次决策。<br>
+        注意：裸值最大的因子未必贡献最大 —— 因为权重不同。
+        表中「对分数的影响」这一列可以直接相加得到最终分数。<br><br>
 
-        <b>3. 蜘蛛的位置是有含义的</b><br>
-        径向 = |分数|。趴在中枢附近说明证据不足、立场不明显；
-        快贴到边缘说明分数很大、立场明确。
-        朝向永远指向当前动作（BUY 在上 / SELL 在下 / HOLD 在右）。<br><br>
+        <b>3. 然后看「什么情况下会变」</b><br>
+        每个门槛离达成还差多少，换算成「主导因子还要动几档」。
+        标<b>黄</b>的是可达成的（盯着它），标<b>灰</b>的是不可能的。<br><br>
 
-        <b>4. 顶部那道弧是"还差多少"</b><br>
-        弧从 0 分画到 1 分，红色刻度是开仓阈值。
-        弧填满 = 够线该动手；没填满说明还在等。<br><br>
+        <b>4. 最后看「风控闸门」</b><br>
+        它是唯一能<b>否决</b>信号的东西。触发时动作变成强制平仓，与分数无关。<br><br>
 
-        <b>5. 风控是闸门，不是建议</b><br>
-        蜘蛛要冲向决策区，但闸门关着就是过不去。
-        这时候你会同时看到「信号分数很高」和「实际不动仓」——
-        这个矛盾就是风控在起作用，纯文字日志很难一眼看出。<br><br>
-
-        <b>6. 为什么能"重演计算过程"</b><br>
-        量化是<b>确定性</b>的：同样的 K 线 + 同样的参数 → 同样的因子与分数。
-        所以重演不是装饰动画，而是把一次真实计算的分层结果按顺序演一遍。
-        每次重演都准确复现上面的数字。
+        <b>5. 关于「看空但只做多」</b><br>
+        这套策略<b>只能做多</b>。所以当分数很负（该做空）时，动作会是「不动 / 空仓」——
+        不是引擎坏了，是<b>方向没法执行</b>。结论框里会写明这一条。
       </div>
     </div>
   </div>
 </div>
 
 <script type="module">
-import { DecisionWeb } from './spider-decision.js';
+import { DecisionCockpit } from './decision-cockpit.js';
 
 const $ = id => document.getElementById(id);
-let META = null, PICKED = null, WEB = null, DATA = null, timer = null;
+let META = null, PICKED = null, CP = null, DATA = null, timer = null;
 
 const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v))
   ? '—' : Number(v).toFixed(d);
@@ -246,7 +298,6 @@ function fail(m) {
 }
 const clearErr = () => { $('err').style.display = 'none'; };
 
-// 这个页面的接口不在 /api/paper 下，直接用绝对路径
 async function api(path) {
   const r = await fetch(path);
   const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
@@ -254,10 +305,9 @@ async function api(path) {
   return d;
 }
 
-// ══════════════════════════════════════════════════
 addEventListener('error', e => {
   const m = e.message || '';
-  if (/ResizeObserver loop/i.test(m)) return;   // 浏览器良性警告
+  if (/ResizeObserver loop/i.test(m)) return;
   if (!DATA) fail('脚本出错：' + m);
 });
 addEventListener('unhandledrejection', e => {
@@ -265,16 +315,15 @@ addEventListener('unhandledrejection', e => {
 });
 
 async function boot() {
-  try {
-    META = await api('/api/paper/meta');
-  } catch (e) { return fail('无法读取元信息：' + e.message); }
+  try { META = await api('/api/paper/meta'); }
+  catch (e) { return fail('无法读取元信息：' + e.message); }
 
   $('market').innerHTML = Object.entries(META.markets)
     .map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
   $('market').value = 'ashare';
 
-  WEB = new DecisionWeb($('cvWeb'));
-  WEB.showReplay = true;
+  CP = new DecisionCockpit($('cvCockpit'));
+  CP.showReplay = true;
 
   $('market').onchange = () => { PICKED = null; fillIntervals(); renderSymbols(); };
   $('symSearch').oninput = onSearchInput;
@@ -286,26 +335,22 @@ async function boot() {
   $('interval').onchange = () => load();
   $('limit').onchange = () => load();
   $('reload').onclick = () => load();
-  $('replayBtn').onclick = () => { WEB.replay(); WEB.render(performance.now() / 1000); };
-  $('hasPos').onchange = () => {
-    const on = $('hasPos').checked;
-    for (const id of ['rowLoss', 'rowDD']) {
-      $(id).style.display = on ? 'flex' : 'none';
-    }
-    load();
-  };
-  for (const id of ['pnlPreset', 'ddPreset']) {
-    $(id).onchange = () => load();
-  }
+  $('replayBtn').onclick = () => { CP.replay(); CP.render(performance.now() / 1000); };
   $('autoRefresh').onchange = () => {
     if (timer) { clearInterval(timer); timer = null; }
     if ($('autoRefresh').checked) timer = setInterval(() => load(true), 60000);
   };
-  addEventListener('resize', () => WEB.render(performance.now() / 1000));
+  $('hasPos').onchange = () => {
+    const on = $('hasPos').checked;
+    for (const id of ['rowLoss', 'rowDD']) $(id).style.display = on ? 'flex' : 'none';
+    load();
+  };
+  for (const id of ['pnlPreset', 'ddPreset']) $(id).onchange = () => load();
+  addEventListener('resize', () => CP.render(performance.now() / 1000));
 
   fillIntervals(); renderSymbols();
   await load();
-  WEB.start();
+  CP.start();
 }
 
 function fillIntervals() {
@@ -380,166 +425,175 @@ async function load(silent = false) {
       market: $('market').value, symbol: PICKED.value,
       interval: $('interval').value, limit: $('limit').value,
     });
-    // 持仓假设：勾了才带上。止损/止盈只在有仓位时才可能触发。
-    //
-    // ⚠️ 这里必须从「浮动盈亏」**反推**成本价，不能直接拿现价当成本。
-    //    要表达"亏 12%"，成本应该是 现价/0.88 = 4223，而不是 现价 3716 ——
-    //    后者算出来的浮亏是 0%，风控当然不触发。
-    //    （第一版就是这么写反的，页面上表现为"选了 −12% 但没拦截"。）
+    // 从「浮动盈亏」反推成本价：
+    // 要表达"亏 12%"，成本 = 现价/(1-0.12)，不是拿现价当成本。
     if ($('hasPos').checked) {
       const close = DATA?.meta?.close;
       const pnl = Number($('pnlPreset').value) || 0;
       const dd = Number($('ddPreset').value) || 0;
       if (close > 0) {
-        const entry = close / (1 + pnl);          // 反推成本
+        const entry = close / (1 + pnl);
         q.set('position', '1');
         q.set('entry', entry.toFixed(4));
-        // 最高价要真的高于成本，否则"从最高点回撤"算不出来。
-        // 取 max(成本, 现价) 再抬 6%，保证移动止损不会在 pnl=0 时被误触发。
         q.set('peak', (Math.max(entry, close) * 1.06).toFixed(4));
         if (dd > 0) q.set('drawdown', String(dd));
         $('assumeInfo').textContent =
-          `成本 ${entry.toFixed(2)} · 现价 ${close.toFixed(2)}`
-          + ` → 浮动 ${(pnl * 100).toFixed(0)}%`;
+          `成本 ${entry.toFixed(2)} · 现价 ${close.toFixed(2)} → 浮动 ${(pnl * 100).toFixed(0)}%`;
       }
     } else {
       $('assumeInfo').textContent = '空仓视角：止损/止盈不会触发';
     }
+
     const d = await api('/api/decision?' + q);
     DATA = d;
-    const fresh = WEB.setData(d);
-    if (fresh) WEB.replay();
-    WEB.render(performance.now() / 1000);
+    const fresh = CP.setData(d);
+    if (fresh) CP.replay();
+    CP.render(performance.now() / 1000);
 
     $('status').textContent = `${d.meta.source} · ${d.meta.elapsedMs}ms`;
     $('dot').style.background = 'var(--ok)';
-    $('webMeta').textContent =
+    $('verdictMeta').textContent =
       `${d.meta.name} ${d.meta.symbol} · ${d.meta.interval} · ${d.meta.bars} 根 · 最新 ${d.meta.at}`;
+    renderVerdict(d);
+    renderFlip(d);
     renderFactors(d);
     renderRisk(d);
-    renderStages(d);
     renderReasons(d);
   } catch (e) {
     fail('计算失败：' + e.message);
   }
 }
 
+/** ① 结论 —— 一句话摘要 + HTML 兜底表格 */
+function renderVerdict(d) {
+  const dec = d.decision, why = d.why || {};
+  const label = { buy: '买入', sell: '卖出', hold: '不动' }[dec.action] || dec.action;
+  const cls = dec.action === 'buy' ? 'up' : dec.action === 'sell' ? 'dn' : 'mut';
+
+  // 一句话摘要：整页最该一眼看懂的东西
+  const hl = $('headline');
+  hl.className = 'headline ' + (dec.riskHit ? 'wn' : dec.action === 'buy' ? 'up'
+    : dec.action === 'sell' ? 'dn' : 'mut');
+  hl.textContent = why.headline || why.reason || label;
+
+  $('vAction').className = 'big ' + cls;
+  $('vAction').textContent = label;
+  $('vScore').className = 'big ' + (dec.score > 0.002 ? 'up' : dec.score < -0.002 ? 'dn' : 'mut');
+  $('vScore').textContent = (dec.score >= 0 ? '+' : '') + fmt(dec.score, 4);
+  $('vTarget').className = 'big';
+  $('vTarget').textContent = (dec.target * 100).toFixed(0) + '%';
+
+  let h = '';
+  if (why.detail) h += `<small>${esc(why.detail)}</small>`;
+  if (dec.riskHit) {
+    h += `<small class="up"><b>⚠ 风控否决</b>：${esc(dec.riskHit)}
+      —— 风控优先于信号，不看打分直接执行。</small>`;
+  }
+  if (d.dominant) {
+    h += `<small>主导因子：<b>${esc(d.dominant.label)}</b>
+      贡献 ${d.dominant.contrib >= 0 ? '+' : ''}${fmt(d.dominant.contrib, 3)}
+      （占全部因子影响力的 ${(d.dominant.share * 100).toFixed(0)}%）</small>`;
+  }
+  $('vWhy').innerHTML = h;
+
+  // 风控否决时，结论区的分数是**清零后**的，而瀑布图显示的是**否决前**的计算值。
+  // 两个数字不一致会让人以为页面算错了，所以这里显式解释。
+  const veto = $('vetoNote');
+  if (dec.riskHit) {
+    const calc = d.score?.clamped;
+    veto.style.display = 'block';
+    veto.innerHTML = `<b class="up">为什么上面的分数是 +0.0000？</b>
+      风控否决时，引擎把分数归零后输出（所以是 +0.0000）。
+      下面瀑布图里算出来的 <b>${calc >= 0 ? '+' : ''}${fmt(calc, 4)}</b>
+      是<b>风控介入之前</b>的信号分数 —— 两个都对，只是阶段不同。
+      这正好说明风控<b>覆盖</b>了信号：不管信号多强，触发止损就必须卖。`;
+  } else {
+    veto.style.display = 'none';
+  }
+}
+
+/** ③ 什么情况下会变 */
+function renderFlip(d) {
+  const items = d.sensitivity || [];
+  if (!items.length) { $('flipBox').innerHTML = '<span class="mut">—</span>'; return; }
+  $('flipBox').innerHTML = items.map(s => {
+    const cls = s.reached ? 'done' : (s.reachable ? 'near' : 'far');
+    const frac = s.reached ? 1 : clamp01(1 - s.deltaNeeded / 2.0);
+    const col = s.reached ? 'var(--ok)' : (s.reachable ? 'var(--warn)' : 'var(--dim)');
+    const right = s.reached
+      ? '<b class="ok">✓ ' + esc(s.note) + '</b>'
+      : `<b style="color:${col}">${esc(s.note)}</b>`;
+    return `<div class="it ${cls}">
+      <span>${esc(s.label)}线</span>
+      <span class="num mut">${s.value >= 0 ? '+' : ''}${fmt(s.value, 2)}</span>
+      <span class="mut">主导因子 <b>${esc(s.factorLabel)}</b>
+        需要变动 <b style="color:${col}">${fmt(s.deltaNeeded, 2)}</b> 档</span>
+      <span>${right}</span>
+    </div>`;
+  }).join('');
+}
+const clamp01 = v => Math.max(0, Math.min(1, v));
+
 function renderFactors(d) {
-  const maxAbs = Math.max(...d.factors.map(f => Math.abs(f.contrib || 0)), 0.001);
+  const tw = d.score.totalWeight || 1;
+  const maxAbs = Math.max(...d.factors.map(f => Math.abs((f.contrib || 0) / tw)), 0.001);
   $('facMeta').textContent =
-    `加权和 ${fmt(d.score.raw, 3)} ÷ 权重和 ${fmt(d.score.totalWeight, 2)} = ${fmt(d.score.clamped, 4)}`
+    `加权和 ${fmt(d.score.raw, 3)} ÷ 权重和 ${fmt(tw, 2)} = ${fmt(d.score.clamped, 4)}`
     + `　状态：${d.regime.name}${d.regime.adx != null ? `（ADX ${fmt(d.regime.adx, 1)}）` : ''}`;
-  const tb = $('facTable').querySelector('tbody');
-  tb.innerHTML = d.factors.map(f => {
+  $('facTable').querySelector('tbody').innerHTML = d.factors.map(f => {
     if (!f.present) {
       return `<tr><td class="mut">${esc(f.label)}</td>
         <td class="mut">${esc(f.desc || '')}</td>
-        <td colspan="5" class="mut">指标未就绪（K 线不足或数据缺失）</td></tr>`;
+        <td colspan="5" class="mut">指标未就绪</td></tr>`;
     }
+    const share = (f.contrib || 0) / tw;
     const cls = f.value > 0.02 ? 'up' : f.value < -0.02 ? 'dn' : 'mut';
-    const w = Math.abs(f.contrib) / maxAbs * 100;
-    const dirTxt = f.dir === 'bull' ? '看多' : f.dir === 'bear' ? '看空' : '中性';
+    const w = Math.abs(share) / maxAbs * 100;
     return `<tr>
       <td>${esc(f.label)}</td>
       <td class="mut" style="font-size:10px">${esc(f.desc || '')}</td>
       <td class="num ${cls}">${f.value >= 0 ? '+' : ''}${fmt(f.value, 3)}</td>
       <td class="num">${fmt(f.weight, 2)}</td>
-      <td class="num ${f.contrib >= 0 ? 'up' : 'dn'}"><b>${f.contrib >= 0 ? '+' : ''}${fmt(f.contrib, 3)}</b></td>
-      <td style="width:110px">
-        <span style="display:inline-block;height:6px;border-radius:3px;width:${w.toFixed(0)}%;
-          background:${f.contrib >= 0 ? 'var(--up)' : 'var(--down)'}"></span>
+      <td class="num">${f.contrib >= 0 ? '+' : ''}${fmt(f.contrib, 3)}</td>
+      <td class="num ${share >= 0 ? 'up' : 'dn'}"><b>${share >= 0 ? '+' : ''}${fmt(share, 4)}</b></td>
+      <td style="width:130px;text-align:right">
+        <span style="display:inline-block;height:7px;border-radius:3px;
+          width:${w.toFixed(0)}%;min-width:2px;
+          background:${share >= 0 ? 'var(--up)' : 'var(--down)'}"></span>
       </td>
-      <td class="${cls}">${dirTxt}</td>
     </tr>`;
   }).join('');
 }
 
 function renderRisk(d) {
-  const act = d.risk.filter(r => r.active);
   const fired = d.risk.filter(r => r.fired);
   const a = d.assumption || {};
   $('riskMeta').innerHTML = (fired.length
     ? `<span class="up">${fired.length} 个触发：${fired.map(r => esc(r.label)).join('、')}</span>`
-    : `${act.length} 个启用 · 本轮无触发`)
+    : `${d.risk.filter(r => r.active).length} 个守备中 · 本轮无触发`)
     + `<span class="mut"> · ${esc(a.note || '')}</span>`;
-  const tb = $('riskTable').querySelector('tbody');
-  tb.innerHTML = d.risk.map(r => {
-    const on = r.active;
+  $('riskTable').querySelector('tbody').innerHTML = d.risk.map(r => {
     const v = r.value;
     const vtxt = v === null || v === undefined ? '—'
       : (typeof v === 'number' && v > 0 && v <= 1 ? pct(v, 0)
         : (v === 0 ? '关闭' : String(v)));
-    const st = r.fired ? '<span class="up">● 已触发（拦截）</span>'
-             : on ? '<span class="ok">○ 守备中</span>'
+    const st = r.fired ? '<span class="up">● 已触发（否决信号）</span>'
+             : r.active ? '<span class="ok">○ 守备中</span>'
              : '<span class="mut">— 未启用</span>';
-    return `<tr><td class="${on ? '' : 'mut'}">${esc(r.label)}</td>
+    return `<tr><td class="${r.active ? '' : 'mut'}">${esc(r.label)}</td>
       <td class="mut" style="font-size:10px">${esc(r.desc)}</td>
-      <td class="num ${on ? '' : 'mut'}">${vtxt}</td>
+      <td class="num ${r.active ? '' : 'mut'}">${vtxt}</td>
       <td>${st}</td></tr>`;
   }).join('');
 }
 
-function renderStages(d) {
-  $('stages').innerHTML = d.stages.map(s =>
-    `<div class="s" data-id="${esc(s.id)}"><b>${esc(s.label)}</b>
-      <span>${esc(s.detail)}</span></div>`).join('');
-  // 跟上重演的进度高亮
-  const tick = () => {
-    if (!DATA) return;
-    const T = WEB._stageProgress(performance.now() / 1000);
-    const boxes = $('stages').querySelectorAll('.s');
-    boxes.forEach((b, i) => {
-      b.classList.toggle('on', T.done || i < T.stage);
-      b.classList.toggle('act', !T.done && i === T.stage);
-    });
-    requestAnimationFrame(tick);
-  };
-  tick();
-}
-
 function renderReasons(d) {
   const dec = d.decision;
-  const actCls = dec.action === 'buy' ? 'up' : dec.action === 'sell' ? 'dn' : 'mut';
-  const label = { buy: '买入', sell: '卖出', hold: '不动' }[dec.action] || dec.action;
-  let h = `<div class="row" style="gap:18px;align-items:baseline;margin-bottom:9px">
-    <div><span class="mut" style="font-size:10px">动作</span>
-      <b class="${actCls}" style="font-size:17px;margin-left:6px">${label}</b></div>
-    <div><span class="mut" style="font-size:10px">分数</span>
-      <b class="${dec.score > 0 ? 'up' : dec.score < 0 ? 'dn' : 'mut'}"
-         style="font-size:17px;margin-left:6px">${dec.score >= 0 ? '+' : ''}${fmt(dec.score, 4)}</b></div>
-    <div><span class="mut" style="font-size:10px">目标仓位</span>
-      <b style="font-size:17px;margin-left:6px">${(dec.target * 100).toFixed(0)}%</b></div>
-    <div><span class="mut" style="font-size:10px">把握度</span>
-      <b style="font-size:17px;margin-left:6px">${fmt(d.gates.margin, 2)}×</b>
-      <span class="mut" style="font-size:10px">（相对开仓线）</span></div>
-  </div>`;
-  if (dec.riskHit) {
-    h += `<div class="note" style="border-left-color:var(--up);margin-bottom:9px">
-      <b class="up">风控触发</b>：${esc(dec.riskHit)}
-      —— 风控优先于信号，不看打分直接执行。</div>`;
-  }
-  h += '<ol style="margin:0;padding-left:19px;line-height:2">'
+  $('reasons').innerHTML = '<ol style="margin:0;padding-left:19px;line-height:2">'
     + (dec.reasons || []).map(r => `<li>${esc(r)}</li>`).join('') + '</ol>';
-  $('reasons').innerHTML = h;
 }
 
 boot();
 </script>
-
-<style>
-  .results{max-height:180px;overflow:auto;margin-top:8px;display:none;
-    border:1px solid var(--border);border-radius:3px;background:#0b0b0e}
-  .results.on{display:block}
-  .results .it{display:flex;justify-content:space-between;gap:8px;padding:5px 9px;
-    border-bottom:1px solid #17171c;cursor:pointer;font-size:11px}
-  .results .it:hover{background:#17171c}
-  .results .it b{font-weight:400}
-  .results .it .px{color:var(--muted);font-size:10px;white-space:nowrap}
-  .picked{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
-  .chip{padding:2px 8px;border:1px solid var(--border);border-radius:9px;
-    font-size:10px;color:var(--muted);cursor:pointer;white-space:nowrap}
-  .chip:hover{border-color:var(--accent);color:var(--text)}
-  .chip.cur{border-color:var(--accent);color:var(--text);background:#1a0d13}
-</style>
 </body>
 </html>

@@ -1,5 +1,5 @@
 /**
- * 给决策蛛网页面截图。
+ * 给决策驾驶舱页面截图。
  *
  * ⚠️ 踩过的坑：`Page.captureScreenshot` 的 `clip` 参数在这个 Chrome 版本上
  *    会让 result.data 为空（不报错，就是没数据）。所以改成：

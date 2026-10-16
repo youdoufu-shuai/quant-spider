@@ -178,7 +178,7 @@ def main() -> int:
         traceback.print_exc()
 
     # ── 6. 决策快照 ─────────────────────────────────────
-    head("6. 决策快照（决策蛛网的数据源）")
+    head("6. 决策快照（决策驾驶舱的数据源）")
     code, out = run([str(QUANT / "decision.py"), "--market", "ashare",
                      "--symbol", "sh600519", "--interval", "1d",
                      "--limit", "400", "--compact"])
@@ -268,7 +268,7 @@ def main() -> int:
     import urllib.request
     for name, url in (("蜘蛛 UI", "http://127.0.0.1:4317/"),
                       ("量化看板", "http://127.0.0.1:4400/"),
-                      ("决策蛛网", "http://127.0.0.1:4400/decision.html"),
+                      ("决策驾驶舱", "http://127.0.0.1:4400/decision.html"),
                       ("专业图表", "http://127.0.0.1:4400/pro.html"),
                       ("模拟盘", "http://127.0.0.1:4400/paper.html")):
         try:

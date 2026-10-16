@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-决策快照 —— 为「决策蛛网」可视化准备一份完整、确定性的数据。
+决策快照 —— 为「决策驾驶舱」可视化准备一份完整、确定性的数据。
 
 ═══════════════════════════════════════════════════════════════
   为什么单独一个脚本
@@ -107,7 +107,7 @@ def build_decision(market: str, symbol: str | None = None,
     ⚠️ 为什么要能传持仓状态：
        止损 / 止盈 / 移动止损都**只在有仓位时才可能触发** ——
        空仓时它们无事可做。所以如果永远用 position=0 算，
-       决策蛛网里的「风控拦截」画面就**永远看不到**，
+       决策驾驶舱里的「风控拦截」画面就**永远看不到**，
        而那恰恰是这个可视化最有价值的一帧。
 
        默认仍然是空仓（刚建仓时的视角），但调用方可以传一个持仓状态
@@ -216,6 +216,88 @@ def build_decision(market: str, symbol: str | None = None,
             f"目标 {dec.target * 100:.0f}%", "value": round(dec.target, 4)},
     ]
 
+    # ---- ★ 为什么是「不动」：把原因说清楚 ----
+    #
+    # 这一节是这次重做的核心。原来页面上写着「已达标（1.74×）」，
+    # 但动作是「不动」—— 用户完全看不懂。真相是：
+    #   · 分数 -0.4357 的绝对值确实超过开仓线 0.25，所以「达标」是对的
+    #   · 但它是**负的**，意思是"该做空"
+    #   · 而这套策略只做多，做空方向没法执行 → 只能空仓不动
+    # 所以「达标」不等于「会买」。必须把这件事显式写出来。
+    entry = acfg.entry_threshold
+    exit_th = acfg.exit_threshold
+    sc = score
+    if sc >= entry:
+        why = "看多且已达开仓线"
+        detail_why = f"分数 {sc:+.4f} ≥ 开仓线 {entry:+.2f} → 开仓"
+    elif sc <= exit_th:
+        why = "看空（策略只做多，无法执行）"
+        detail_why = (f"分数 {sc:+.4f} ≤ 平仓线 {exit_th:+.2f} → 该做空，"
+                      f"但本策略只做多 → 只能空仓")
+    else:
+        why = "信号不够强"
+        detail_why = (f"分数 {sc:+.4f} 在 [{exit_th:+.2f}, {entry:+.2f}] 之间 "
+                      f"→ 不够开仓也不够平仓")
+    if dec.risk_hit:
+        why = "风控否决"
+        detail_why = f"风控触发「{dec.risk_hit}」，优先于信号，不看打分"
+
+    # ---- 一句话摘要 ----
+    # 页面上最该一眼看懂的东西。把「动作 + 原因 + 离变化还差多少」压成一句。
+    # 不写这一句的话，用户要在三个区块之间来回对照才拼得出结论。
+    if dec.risk_hit:
+        headline = (f"{'买入' if dec.action == 'buy' else '卖出' if dec.action == 'sell' else '不动'}"
+                    f" —— 风控否决：{dec.risk_hit}")
+    elif sc >= entry:
+        headline = f"买入 —— 分数 {sc:+.2f} 已达开仓线 {entry:+.2f}"
+    elif sc <= exit_th:
+        headline = f"空仓不动 —— 分数 {sc:+.2f} 看空，但策略只做多、执行不了"
+    else:
+        gap_to_entry = entry - sc
+        headline = (f"空仓观望 —— 分数 {sc:+.2f} 不够强，"
+                    f"距开仓线还差 {gap_to_entry:.2f}")
+
+    # ---- 主导因子与翻转距离（headline 里也要用）----
+    dominant = max((r for r in rows if r["present"]),
+                   key=lambda r: abs(r["contrib"]), default=None)
+    thresholds = [
+        {"key": "entry", "label": "开仓", "value": entry,
+         "reached": sc >= entry,
+         "gap": round(max(0.0, entry - sc), 4)},
+        {"key": "exit", "label": "平仓", "value": exit_th,
+         "reached": sc <= exit_th,
+         "gap": round(max(0.0, sc - exit_th), 4)},
+    ]
+    # 主导因子的"杠杆"：它每变动 1.0（满档），分数变动 weight/totalWeight
+    sensitivity = []
+    if dominant and total_w > 0:
+        lever = dominant["weight"] / total_w          # 满档时的分数影响
+        for t in thresholds:
+            if t["reached"]:
+                sensitivity.append({
+                    "threshold": t["key"], "label": t["label"],
+                    "value": t["value"], "reached": True, "gap": t["gap"],
+                    "factor": dominant["key"], "factorLabel": dominant["label"],
+                    "deltaNeeded": 0.0, "lever": round(lever, 4),
+                    "reachable": True,
+                    "note": f"已{'达到' if t['key'] == 'entry' else '触发'}",
+                })
+                continue
+            need = t["gap"] / lever if lever > 0 else 999.0
+            sensitivity.append({
+                "threshold": t["key"], "label": t["label"],
+                "value": t["value"], "reached": False, "gap": t["gap"],
+                "factor": dominant["key"], "factorLabel": dominant["label"],
+                # 需要主导因子再变动多少（因子范围 -1~+1）
+                "deltaNeeded": round(need, 3),
+                "lever": round(lever, 4),
+                # 因子不可能变动超过 2.0（从 -1 到 +1）
+                "reachable": need <= 2.0,
+                "note": (f"{dominant['label']}再{'涨' if t['key'] == 'entry' else '跌'} "
+                         f"{need:.2f} 档" if need <= 2.0
+                         else f"需要 {dominant['label']} 变动 {need:.2f} 档 —— 不可能"),
+            })
+
     return {
         "meta": {
             "name": SYMBOL_NAMES.get(sym, series.name or sym),
@@ -254,6 +336,25 @@ def build_decision(market: str, symbol: str | None = None,
         "risk": gates,
         "decision": dec.to_dict(),
         "stages": stages,
+        # ★ 为什么是这个动作 —— 直接给结论，不让用户自己推
+        "why": {
+            "action": dec.action,
+            "reason": why,
+            "detail": detail_why,
+            "headline": headline,
+            "score": round(sc, 4),
+            "entry": entry,
+            "exit": exit_th,
+        },
+        # ★ 离翻转还差多少 —— 最有行动价值的一节
+        "sensitivity": sensitivity,
+        "dominant": ({
+            "key": dominant["key"], "label": dominant["label"],
+            "contrib": dominant["contrib"], "weight": dominant["weight"],
+            "share": round(abs(dominant["contrib"])
+                           / max(sum(abs(r["contrib"]) for r in rows
+                                     if r["present"]), 1e-9), 4),
+        } if dominant else None),
         # 回显这次用的持仓假设，免得看的人以为一定是空仓
         "assumption": {
             "position": pos,
@@ -546,7 +647,7 @@ def _selftest() -> int:
 
 # ============================================================
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="决策快照（供决策蛛网可视化）")
+    ap = argparse.ArgumentParser(description="决策快照（供决策驾驶舱可视化）")
     ap.add_argument("--market", default="ashare", choices=list(MARKETS))
     ap.add_argument("--symbol", default=None)
     ap.add_argument("--interval", default=None)

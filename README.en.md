@@ -157,7 +157,7 @@ Since quant is **deterministic** — same candles plus same parameters always yi
 score — "replay the computation" replays the 9 real stages of an actual calculation, not a random
 animation.
 
-Details (Chinese): [决策蛛网说明.md](docs/决策蛛网说明.md)
+Details (Chinese): [决策驾驶舱说明.md](docs/决策驾驶舱说明.md)
 
 ---
 
@@ -210,7 +210,7 @@ docs/                   documentation and screenshots
 
 **Documentation is currently Chinese only.** Good starting points:
 [量化模块说明.md](docs/量化模块说明.md) (quant module), [本地部署说明.md](docs/本地部署说明.md) (deployment),
-[决策蛛网说明.md](docs/决策蛛网说明.md) (decision web).
+[决策驾驶舱说明.md](docs/决策驾驶舱说明.md) (decision web).
 
 ---
 
