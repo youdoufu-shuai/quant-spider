@@ -104,6 +104,46 @@ A 股的真实约束都做了：T+1、100 股整手、涨跌停一字板买不�
   <img src="docs/screenshots/auto-logic.png" width="640" alt="决策解释">
 </p>
 
+### 专业图表（可交互）
+
+原来的图表是「画一次就不管了」——没有十字光标、X 轴连日期都没有，看盘时根本不知道某根 K 线是哪天。现在单独做了一个页面（`/pro.html`）：
+
+<p align="center">
+  <img src="docs/screenshots/pro-chart.png" width="760" alt="专业图表">
+</p>
+
+- **十字光标 + tooltip** —— 悬停显示那根 K 线的日期、开高低收、涨跌幅、量、以及当时所有指标的值
+- **滚轮缩放**（以光标为锚点）、**拖动平移**、双指捏合（触屏）
+- **X 轴时间刻度** —— 按可用宽度自动挑步长，跨度大显示日期、跨度小显示到分钟
+- **三面板联动** —— K 线 / MACD / RSI 共用一个视口，缩放平移完全同步
+- **K 线 + EMA12/26 + SMA20 + 布林带 + 成交量**，买卖点标在图上
+
+为了不重复造轮子，把图表抽成了一个通用引擎（`quant/web/chart.js`，约 700 行，零依赖）。
+
+### 参数优化（强制样本外验证）
+
+`quant/optimizer.py` —— 网格 / 随机搜索，但**重点是防止骗自己**：
+
+| 机制 | 作用 |
+|---|---|
+| **70/30 样本切分** | 参数只在训练集挑，然后拿去验证集跑一遍 |
+| **只按训练集排序** | 用验证集排序 = 把验证集也变成训练集，验证就失效了 |
+| **泛化差距** | `验证收益 − 训练收益`，每行都算 |
+| **过拟合标记** | 训练好、验证差 → 打上 `⚠过拟合` |
+| **最少交易数门槛** | 少于 3 笔的组合直接排除（避免"1 笔赚 50%"的运气结果排第一） |
+| **成本照收** | 每组合都带手续费滑点跑，不是零成本优化 |
+
+实测在茅台和上证指数上，它都**主动报出了过拟合警告**，而不是给我一个"看起来很棒的参数"：
+
+```
+A股 上证指数 donchian_break:
+  entry_n=20,exit_n=10   训练 +6.66%  验证 -5.69%   gap -12.35%  ⚠过拟合
+  ⚠ 训练集最优与验证集最优不是同一组参数 —— 过拟合的典型信号
+  ⚠ 只有 17% 的参数组合在验证集上为正收益 —— 该策略在这个标的上可能整体无效
+```
+
+**注**：`macd_trend` 的函数签名是 `(ind)`，**没有可调参数**，所以它不在优化列表里 —— 不硬塞参数去"优化"，那是假装在工作。
+
 ### Agent 实时面板
 
 原项目的蜘蛛界面能接 MCP，让 Agent 把自己的执行过程实时画出来。这个我留着并且修了一个坑：
@@ -197,24 +237,50 @@ node mcp/live-feed.mjs --interval 2.0
 
 我对这套东西的信任主要来自自检，不是来自"看起来跑通了"。
 
+**模块自检**（每个模块内置，`python quant/<模块>.py --selftest`）：
+
 ```bash
-python quant/indicators.py    --selftest    # 55 项断言
-python quant/backtest.py      --selftest    # 20
-python quant/paper.py         --selftest    # 20
-python quant/paper_live.py    --selftest    # 62
-python quant/autotrader.py    --selftest    # 44
-python quant/datasource.py    --selftest    # 7
-python quant/symbols.py       --selftest    # 25
+python quant/test_indicators.py --selftest    # 55 项
+python quant/backtest.py        --selftest    # 20
+python quant/paper.py           --selftest    # 20
+python quant/paper_live.py      --selftest    # 62
+python quant/autotrader.py      --selftest    # 44
+python quant/optimizer.py       --selftest    # 51
+python quant/datasource.py      --selftest    # 7   （联网）
+python quant/symbols.py         --selftest    # 25  （联网，首次跑 98 秒枚举）
 ```
 
-**233 项断言，全部通过。**
+**独立测试套件**（`quant/tests/`，纯离线，不依赖 pytest）：
 
-值得说的是这些断言抓出了 **20 个 bug，其中 13 个不报错、只是让结果悄悄算错**。举两个：
+```bash
+python quant/tests/run.py        # 706 条断言 / 186 个用例
+```
+
+**统一入口**（跑全部，含 Node 测试）：
+
+```bash
+make test
+# 或
+node tools/run-tests.mjs              # 全部，含联网套件
+node tools/run-tests.mjs --offline    # 只跑离线的，4.6 秒
+```
+
+`--offline` 很快（4.6 秒）且不依赖网络，适合当提交前检查。
+
+值得说的是这些断言抓出了 **20 多个 bug，其中多数不报错、只是让结果悄悄算错**。举三个：
 
 - `getattr(ind, "ema12")` 取不到值 —— 指标在 `ind.values` **字典**里而不在属性上，导致所有因子算不出来、打分恒为 0。表面上"运行正常"，实际完全没在工作。
 - `meta=` 参数无条件传给 `AutoDecider`，抛 `TypeError` 被 `except` 吞掉 —— **自动交易显示"运行中"但永远不下单**，日志里只有一行不起眼的"决策失败"。
+- `Viewport.on(fn)` 的签名是单参数，但我按 `Chart.on(name, fn)` 的方式调用 —— 字符串被当成回调收下、真回调被丢弃，表现为"视口按钮没反应"。
 
 这类问题看代码基本发现不了，只能靠测试。
+
+### CI
+
+`.github/workflows/ci.yml` —— push 与 PR 时在 ubuntu 上跑 Node 20/22 + Python 3.12 矩阵。
+两个**联网**的自检（`datasource`、`symbols`）标了 `continue-on-error`，因为它们依赖
+Binance / 新浪的可用性 —— 实测同一台机器一小时内就可能从 7/7 掉到 4/7。
+让外部服务决定你的 CI 红绿是不对的。
 
 ---
 
@@ -238,12 +304,16 @@ python quant/symbols.py       --selftest    # 25
 
 诚实列一下，免得你以为是完整方案：
 
-- **图表没有交互** —— 没有十字光标、没有 tooltip、X 轴没有日期刻度。这是目前最大的短板，看盘体验差不少。
 - **只能做多** —— 没有做空，没有组合层面的仓位管理。
-- **没有参数优化** —— 阈值和权重是我手工设的，没跑网格搜索。
+- **优化是单标的的** —— 没有走前向分析（walk-forward）、没有多标的稳健性检验。
+  现在的样本外验证只是"切一刀"，比不做强，但离严谨还差得远。
 - **AI 决策模式没实测** —— 接口、兜底、输出夹紧逻辑都验证了，但我这边没有可用的模型端点，所以没真跑过模型。想用得自己配（见下）。
 - **数据源脆弱** —— 东财已经被封过，新浪也可能。降级链能顶一阵，全挂了就得换。
-- **单机单用户** —— 状态是本地明文 JSON，没有并发控制。
+- **单机单用户** —— 状态是本地明文 JSON，没有并发控制、没有鉴权。
+  服务默认只监听 `127.0.0.1`；要暴露到局域网得自己设 `HOST`/`QUANT_HOST`，而且没有登录。
+- **Docker 没实测** —— 本机没有 docker，`Dockerfile` / `docker-compose.yml` 只做了静态校验，
+  一次都没构建过。已知风险写在文件注释里。
+
 
 ### AI 决策模式怎么接
 

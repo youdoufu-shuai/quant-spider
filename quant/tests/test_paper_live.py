@@ -201,14 +201,14 @@ class TestRiskStateReset(TestCase):
 
     def test_clearing_resets_peak_and_counters(self):
         s = session_with_prices([100.0, 120.0, 110.0], initial=100_000.0)
+        advance(s, 0)
         s.place_order("buy", order_type="market")
-        self.near(s.peak_price, 100.0, 1e-9, "建仓时 peak_price = 成交价")
+        self.near(s.peak_price, 100.0, 1e-9, "建仓时 peak_price = 成交价 100")
         self.eq(s.bars_held, 0, "建仓时 bars_held = 0")
         # 手动推进 peak_price，模拟持仓期创新高
         s.peak_price = 120.0
         s.bars_held = 5
-        s.bar_index = 2
-        s.price_series = [100.0, 120.0, 110.0]
+        advance(s, 2)
         s.place_order("sell", order_type="market")
         self.near(s.peak_price, 0.0, 1e-12, "清仓后 peak_price 归零")
         self.eq(s.bars_held, 0, "清仓后 bars_held 归零")
@@ -217,24 +217,23 @@ class TestRiskStateReset(TestCase):
     def test_add_on_keeps_tracking(self):
         """加仓不算「首次建仓」，不能重置 peak_price / bars_held。"""
         s = session_with_prices([100.0, 110.0], initial=100_000.0)
+        advance(s, 0)
         s.place_order("buy", qty=100, order_type="market")
         s.peak_price = 105.0
         s.bars_held = 3
-        s.bar_index = 1
-        s.price_series = [100.0, 110.0]
+        advance(s, 1)
         s.place_order("buy", qty=100, order_type="market")
         self.near(s.peak_price, 105.0, 1e-9, "加仓不重置 peak_price")
         self.eq(s.bars_held, 3, "加仓不重置 bars_held")
 
     def test_mark_updates_peak_and_drawdown(self):
         s = session_with_prices([100.0, 200.0, 100.0], initial=100_000.0)
+        advance(s, 0)
         s.place_order("buy", order_type="market")
-        s.bar_index = 1
-        s.price_series = [100.0, 200.0]
+        advance(s, 1)
         s._mark()
         self.near(s.peak, 200_000.0, 1e-6, "峰值权益 200000")
-        s.bar_index = 2
-        s.price_series = [100.0, 200.0, 100.0]
+        advance(s, 2)
         s._mark()
         self.near(s.max_dd, 50.0, 1e-6, "回撤 50%")
         self.near(s.equity, 100_000.0, 1e-6, "权益回到 100000")
@@ -245,13 +244,19 @@ class TestSnapshotAndState(TestCase):
 
     def test_snapshot_keys_and_values(self):
         s = session_with_prices([100.0, 150.0], initial=100_000.0)
+        advance(s, 0)
         s.place_order("buy", order_type="market")
         snap = s.snapshot()
-        self.true("equity" in snap and "cash" in snap and "qty" in snap,
+        self.true(all(k in snap for k in ("equity", "cash", "qty", "avgPrice")),
                   "快照含账户核心字段")
         self.true("equityCurve" in snap and "prices" in snap, "快照含曲线数据")
-        self.true("orders" in snap and "fills" in snap, "快照含委托与成交")
-        self.near(snap["equity"], 100_000.0, 1e-6, "权益正确")
+        self.true("recentOrders" in snap and "recentFills" in snap,
+                  "快照含委托与成交（键名是 recentOrders / recentFills）")
+        self.near(snap["equity"], 100_000.0, 1e-6, "权益正确（100 买入、价格没动）")
+        self.eq(len(snap["recentFills"]), 1, "有 1 笔成交记录")
+        self.true(snap["inPosition"], "标记为持仓中")
+        self.eq(snap["tPlus1"], False, "加密会话 tPlus1 = False")
+        self.eq(snap["lot"], 1, "加密手数 = 1")
 
     def test_state_round_trip(self):
         """
@@ -320,14 +325,14 @@ declare_counts({
                             "test_crypto_has_no_t_plus_one": (1, 1)},
     "TestFillMath": {"test_buy_math_hand_computed": (8, 8),
                      "test_buy_math_with_costs": (3, 3),
-                     "test_sell_realized_pnl_hand_computed": (7, 7),
+                     "test_sell_realized_pnl_hand_computed": (8, 8),
                      "test_average_price_on_two_buys": (2, 2),
                      "test_lot_size_rounding_on_ashare": (2, 2),
                      "test_full_position_buy_when_qty_none": (2, 2)},
-    "TestRiskStateReset": {"test_clearing_resets_peak_and_counters": (4, 4),
+    "TestRiskStateReset": {"test_clearing_resets_peak_and_counters": (5, 5),
                            "test_add_on_keeps_tracking": (2, 2),
                            "test_mark_updates_peak_and_drawdown": (3, 3)},
-    "TestSnapshotAndState": {"test_snapshot_keys_and_values": (4, 4),
+    "TestSnapshotAndState": {"test_snapshot_keys_and_values": (8, 8),
                              "test_state_round_trip": (11, 11),
                              "test_state_is_json_serializable": (2, 3),
                              "test_auto_config_round_trip": (2, 2),

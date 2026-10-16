@@ -43,6 +43,7 @@ TEST_FILES = [
     "test_indicators.py",
     "test_backtest.py",
     "test_paper.py",
+    "test_paper_live.py",
     "test_autotrader.py",
     "test_edge_cases.py",
     "test_perf.py",
