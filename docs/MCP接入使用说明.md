@@ -147,7 +147,7 @@ you  1 ── 注册到 DSH 并确认加载
 会话标题「Prompt Spider UI 本地部署」，状态 `COMPLETED`，耗时 8.57 秒，
 页面状态栏显示 `真实事件 · 由 Agent 主动上报`。
 
-回放已导出：[exports/dsh-deploy-prompt-spider.json](exports/dsh-deploy-prompt-spider.json)（11.9 KB）
+回放已导出：`exports/dsh-deploy-prompt-spider.json`（11.9 KB，本地产物，不入库）
 可以用 `spider_import_session` 重新载入。
 
 ---

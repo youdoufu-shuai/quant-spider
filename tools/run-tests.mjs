@@ -19,15 +19,24 @@
  *
  *  实测基线（2026-10，Windows / Node 24 / Python 3.12 与 3.13 均通过）：
  *    indicators.py --selftest    23 断言   离线
- *    test_indicators.py          55 断言   离线
+ *    tests/run.py              1023 断言   离线   ← 完整独立套件（256 用例）
  *    backtest.py --selftest      20 断言   离线
  *    paper.py --selftest         20 断言   离线
  *    paper_live.py --selftest    62 断言   离线
  *    autotrader.py --selftest    44 断言   离线
+ *    optimizer.py --selftest     51 断言   离线
+ *    ai_settings.py --selftest   43 断言   离线
+ *    decision.py --selftest      56 断言   离线
  *    datasource.py --selftest     7 断言   ⚠ 联网（真实抓新浪行情）
  *    symbols.py --selftest       25 断言   ⚠ 联网（首次要枚举 8265 只 A 股 + 511 个币对，约 98s）
  *    tests/*.test.mjs            44 通过 + 1 跳过
- *    离线合计 224 项 Python 断言；含联网共 256 项。
+ *
+ *  ⚠️ 这里曾经有一条 `test_indicators.py 55 断言`。那个文件与
+ *     quant/tests/test_indicators.py 同名，而 quant/tests/run.py 的 sys.path
+ *     顺序写反 → 按名字 import 命中了 55 断言那个旧副本 →
+ *     **新套件的 213 条断言一条都没跑，汇总却报「全部通过」**。
+ *     旧副本已删除，现在改跑完整套件（多 4.6 倍断言）；run.py 里也加了两道
+ *     防线（按文件路径加载 + 同名检测）防止再犯。
  *
  *  为什么联网套件默认不阻塞：
  *    datasource / symbols 会真的请求外部行情源（新浪等），并且 symbols 首次运行要重建
@@ -83,7 +92,11 @@ const USAGE = `quant-spider 统一测试入口
 // 与 .github/workflows/ci.yml 的步骤一一对应；改这里记得同步改 YAML。
 const PY_SUITES = [
   { id: 'indicators',      label: 'indicators.py --selftest',   script: 'quant/indicators.py',      args: ['--selftest'], network: false },
-  { id: 'test_indicators', label: 'test_indicators.py（回归）',  script: 'quant/test_indicators.py', args: [],             network: false },
+  // ⚠️ 这一条以前跑 quant/test_indicators.py（55 断言的旧副本）。
+  //    那个文件与 quant/tests/test_indicators.py 同名，而 run.py 的 sys.path
+  //    顺序写反，导致**新套件的 213 条断言一条都没跑，汇总却报全过**。
+  //    现在旧副本已删除，这里直接跑完整独立套件（1000+ 断言）。
+  { id: 'suite',           label: 'tests/run.py（完整套件）',    script: 'quant/tests/run.py',       args: [],             network: false },
   { id: 'backtest',        label: 'backtest.py --selftest',     script: 'quant/backtest.py',        args: ['--selftest'], network: false },
   { id: 'paper',           label: 'paper.py --selftest',        script: 'quant/paper.py',           args: ['--selftest'], network: false },
   { id: 'paper_live',      label: 'paper_live.py --selftest',   script: 'quant/paper_live.py',      args: ['--selftest'], network: false },
@@ -325,18 +338,15 @@ function reportLine(ok, suite, counts, r, verbose) {
 }
 
 // ── 断言计数解析 ────────────────────────────────────────────────────────────
-// 兼容项目内既有的三种格式 + node:test 的 TAP 汇总：
-//   "  自检: 23 通过 / 0 失败"            indicators/backtest/paper/paper_live/autotrader/symbols
-//   "  自检: 7 成功 / 0 失败"             datasource 用的是「成功」
-//   "  全部通过：55 项断言"                test_indicators.py 全通过时
-//   "  50 通过 / 3 失败"                  test_indicators.py 有失败时
+// 兼容项目内既有的几种格式 + node:test 的 TAP 汇总：
+//   "  断言 1023 条 — 1023 通过 / 0 失败"   tests/run.py（完整套件）
+//   "  自检: 23 通过 / 0 失败"             indicators/backtest/paper/paper_live/autotrader/symbols
+//   "  自检: 7 成功 / 0 失败"              datasource 用的是「成功」
 //   "# pass 44 / # fail 0 / # skipped 1"  node --test --test-reporter=tap
 function parseCounts(text) {
   const t = String(text || '');
   let m = t.match(/(\d+)\s*(?:通过|成功)\s*\/\s*(\d+)\s*失败/);
   if (m) return { pass: Number(m[1]), fail: Number(m[2]) };
-  m = t.match(/全部通过\s*[：:]\s*(\d+)\s*项断言/);
-  if (m) return { pass: Number(m[1]), fail: 0 };
   m = t.match(/^#\s*pass\s+(\d+)\s*$/m);
   if (m) {
     const f = t.match(/^#\s*fail\s+(\d+)\s*$/m);

@@ -94,6 +94,20 @@ def symbol_name(market: str, symbol: str) -> str:
 
 
 # ============================================================
+#  ⚠️ 这几个枚举与 paper.py 里的**有意重复**，不要合并到公共模块。
+#
+#     判断依据（实测过，不是想当然）：
+#       · Side 两边一字不差，且都是 str 枚举 → 运行时完全等价
+#         （paper.Side.BUY == paper_live.Side.BUY 为 True，hash 也相同），
+#         所以跨模块互传**不会出错**。
+#       · OrderState 其实**不一样**：本模块多一个 CANCELLED。
+#         两个状态机本就不同 —— paper.py 是一次性回放（跑完就结束，没有"撤单"），
+#         本模块是长驻会话（随时可撤）。
+#       · 两个模块互不 import（paper_cli 同时用两者，但各取各的枚举）。
+#
+#     结论：抽公共模块只会把两个本就该独立演化的状态机绑在一起，
+#     换来零收益。这里记下来，免得以后有人"顺手去重"。
+# ============================================================
 class Side(str, Enum):
     BUY = "buy"
     SELL = "sell"
@@ -107,7 +121,7 @@ class OrderType(str, Enum):
 class OrderState(str, Enum):
     PENDING = "pending"
     FILLED = "filled"
-    CANCELLED = "cancelled"
+    CANCELLED = "cancelled"   # 只有长驻会话才会撤单，paper.py 没有这个状态
     REJECTED = "rejected"
 
 

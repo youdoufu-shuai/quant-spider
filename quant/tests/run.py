@@ -31,11 +31,16 @@ HERE = Path(__file__).resolve().parent          # quant/tests
 QUANT = HERE.parent                             # quant
 REPO = QUANT.parent                             # 仓库根
 
-# 顺序很重要：tests 目录必须在最前，否则同名的旧副本（比如 quant/test_indicators.py）
-# 会被抢先导入 —— quant/ 下确实有一个老的 test_indicators.py。
-for p in (str(HERE), str(QUANT), str(REPO)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+# ⚠️ 插入顺序：**倒着插**，因为 insert(0) 是往前放。
+#    写成正序（tests, quant, repo）会让最终的 path 变成 [repo, quant, tests] ——
+#    正好反了，于是 `import test_indicators` 会命中 quant/ 下那个同名旧文件。
+#    实测踩过：run.py 报「808 断言全过」，而 quant/tests/test_indicators.py
+#    的 213 条**一条都没跑**，真身单独跑时还有 12 条失败。
+for p in (str(REPO), str(QUANT), str(HERE)):
+    while p in sys.path:
+        sys.path.remove(p)
+    sys.path.insert(0, p)
+# 现在顺序是 [HERE, QUANT, REPO, ...]，tests 在最前
 
 import harness  # noqa: E402  （必须在 sys.path 调整之后）
 
@@ -55,6 +60,22 @@ BANNED_NAMES = {
     "random", "string", "operator", "platform", "hashlib", "datetime", "pathlib",
 }
 
+# 每个测试文件至少应注册这么多用例。低于它就判失败。
+#
+# 为什么需要这个：光有「断言数护栏」不够 —— 护栏只在用例**被执行**时才生效。
+# 如果整个文件没被加载（同名遮蔽、import 失败被吞、路径写错），
+# 护栏根本不会触发，汇总却报全过。实测就是这么骗过一次。
+# 数字取当前实际值略留余量，删用例时会提醒你同步更新。
+MIN_CASES_PER_FILE = {
+    "test_indicators.py": 40,
+    "test_backtest.py": 25,
+    "test_paper.py": 25,
+    "test_paper_live.py": 18,
+    "test_autotrader.py": 35,
+    "test_edge_cases.py": 40,
+    "test_perf.py": 2,
+}
+
 
 def verify_no_stdlib_shadowing() -> list[str]:
     """
@@ -69,22 +90,97 @@ def verify_no_stdlib_shadowing() -> list[str]:
     return problems
 
 
+def verify_no_duplicate_test_names() -> list[str]:
+    """
+    检查是否有同名测试文件散落在 sys.path 的多个目录里。
+
+    ⚠️ 这是本项目踩过的最隐蔽的一个坑：quant/test_indicators.py（旧的、55 断言）
+    与 quant/tests/test_indicators.py（新的、213 断言）同名，
+    而 sys.path 顺序一错就会加载到旧的那个 —— 11 个测试类一个都不注册，
+    汇总却报「全过」。**静默加载错文件比报错危险得多。**
+
+    所以每次运行都主动扫一遍，发现重名直接拒绝启动。
+    """
+    problems: list[str] = []
+    for fn in TEST_FILES:
+        stem = fn[:-3]
+        found = []
+        for d in (HERE, QUANT, REPO):
+            f = d / fn
+            if f.exists():
+                found.append(f)
+        if len(found) > 1:
+            problems.append(
+                f"{fn} 有 {len(found)} 个同名副本：\n      "
+                + "\n      ".join(str(f) for f in found)
+                + f"\n      sys.path 会命中第一个，其余永远不执行。"
+                  f"请删掉旧的（保留 {HERE / fn}）")
+    return problems
+
+
 def import_test_modules(verbose: bool) -> list[str]:
+    """
+    加载测试模块。
+
+    ⚠️ 用**文件路径**显式加载，而不是 `importlib.import_module(mod_name)`。
+       按名字 import 会走 sys.path 搜索，一旦有同名文件就会拿错 —— 而且不报错。
+       按路径加载从根上消除这个可能（重名检测是第二道防线）。
+       模块名加 `qtests_` 前缀，避免与 sys.path 上的同名模块互相污染。
+    """
+    import importlib.util
+
     loaded: list[str] = []
     for fn in TEST_FILES:
         path = HERE / fn
         if not path.exists():
             print(f"  [SKIP] 缺少测试文件 {fn}")
             continue
-        mod_name = fn[:-3]
-        if mod_name in sys.modules:
-            importlib.reload(sys.modules[mod_name])
-        else:
-            importlib.import_module(mod_name)
+        mod_name = f"qtests_{fn[:-3]}"
+        spec = importlib.util.spec_from_file_location(mod_name, path)
+        if spec is None or spec.loader is None:
+            print(f"  [FAIL] 无法为 {fn} 建立加载器")
+            continue
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[mod_name] = mod
+        before = len(harness.REGISTRY)
+        spec.loader.exec_module(mod)
+        added = len(harness.REGISTRY) - before
         loaded.append(mod_name)
         if verbose:
-            print(f"  已加载 {fn}")
+            print(f"  已加载 {fn}  (+{added} 个测试类)")
+
     return loaded
+
+
+def verify_registration(loaded: list[str]) -> list[str]:
+    """
+    加载完之后核对：每个文件是否注册了足够多的用例。
+
+    这一步是「断言数护栏」的补充 —— 护栏管「用例跑了但断言少了」，
+    这里管「用例压根没跑」。
+    """
+    problems: list[str] = []
+    # 统计每个测试类来自哪个文件（通过模块名反推）
+    by_file: dict[str, int] = {}
+    for cls in harness.REGISTRY:
+        mod = getattr(cls, "__module__", "")
+        # qtests_test_indicators → test_indicators.py
+        if mod.startswith("qtests_"):
+            fn = mod[len("qtests_"):] + ".py"
+            n = len([m for m in dir(cls) if m.startswith("test_")])
+            by_file[fn] = by_file.get(fn, 0) + n
+
+    for fn, minimum in MIN_CASES_PER_FILE.items():
+        if fn not in [f for f in TEST_FILES]:
+            continue
+        got = by_file.get(fn, 0)
+        if got < minimum:
+            problems.append(
+                f"{fn} 只注册了 {got} 个用例（至少应有 {minimum}）—— "
+                f"该文件可能没被正确加载。检查是否有同名文件遮蔽，"
+                f"或 import 阶段抛了异常。")
+    return problems
+
 
 
 def benchmark() -> int:
@@ -186,8 +282,28 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("  遮蔽检查  通过（无 enum.py / struct.py / types.py 等同名文件）")
 
+    dupes = verify_no_duplicate_test_names()
+    if dupes:
+        print("\n  [FATAL] 发现同名测试文件副本（会导致静默加载错文件）：")
+        for d in dupes:
+            print(f"    · {d}")
+        # 明确说明后果，否则看的人会以为只是"重复代码"
+        print("\n  为什么这是致命的：按名字 import 只会命中 sys.path 上的第一个，"
+              "\n  其余副本永远不执行，但汇总统计仍然会说「全部通过」。")
+        return 1
+    print("  同名检查  通过（每个测试文件只有一份）")
+
     t0 = time.perf_counter()
-    import_test_modules(args.verbose)
+    loaded = import_test_modules(args.verbose)
+
+    # ★ 加载完整性检查：没注册够用例就判失败。
+    #   这一步在 collect() 之前 —— 「一条都没加载」比「加载了但断言少」更隐蔽。
+    reg = verify_registration(loaded)
+    if reg:
+        print("\n  [FATAL] 测试注册不完整：")
+        for r in reg:
+            print(f"    · {r}")
+        return 1
 
     cases = harness.collect()
     if args.list:

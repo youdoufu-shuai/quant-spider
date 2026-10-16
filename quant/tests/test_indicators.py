@@ -14,7 +14,49 @@
 
 期望值全部是先用 quant/tests/_calibrate.py 跑出来、再手算核对过的。
 
-直接运行：python quant/tests/test_indicators.py
+═══════════════════════════════════════════════════════════════════
+  为什么这个文件必须存在
+═══════════════════════════════════════════════════════════════════
+开发过程中，指标实现里出现过 4 个**会静默算错**的 bug：
+
+  #1 wilder() 种子取 values[:n]
+     输入含前导 NaN 时 np.mean 返回 NaN，种子 NaN 让整条输出作废。
+     症状：ADX 全序列 = NaN。ADX 是趋势判断的核心，废了策略跟着废。
+     修法：种子取「前 n 个**有效值**」的均值。
+     → 见 TestWilder::test_seed_uses_first_n_VALID_values_not_positions
+
+  #2 sma() 用 cumsum 实现
+     窗口内只要有一个 NaN，结果就是 NaN 并向后传播。
+     KDJ 的 D = SMA(K)，而 K 开头天然是 NaN → **D 线永远算不出来**。
+     修法：逐窗计算，容忍窗口内有 NaN（有效占比 >= 75% 即计算）。
+     → 见 TestSma::test_no_cumsum_contamination
+
+  #3 RSI 索引错位一格
+     delta = np.diff(close) 比 close 短一位；直接同下标混用会整体错开，
+     结果末尾恒为 NaN 且数值全偏。
+     修法：pad 一位后显式赋值回原位。
+     → 见 TestRsi 的人工核对值
+
+  #4 RSI 数组越界
+     avg_gain 长度与 close 不一致，循环到末尾 IndexError。
+
+这四个都不会抛错就悄悄算错 —— 量化里最危险的情况。
+所以每个都固化成断言，改代码时必须仍然通过。
+
+运行时（两种入口等价，都走同一个 harness）：
+    python quant/tests/run.py              # 全部套件（推荐）
+    python quant/tests/test_indicators.py  # 只跑本文件
+
+═══════════════════════════════════════════════════════════════════
+  ⚠️ 不要再建 quant/test_indicators.py
+═══════════════════════════════════════════════════════════════════
+这个文件曾经在 quant/ 下有一个同名旧副本（55 断言版）。因为 run.py 的
+sys.path 顺序写反，`import test_indicators` 命中了旧副本 —— 结果本文件
+**213 条断言一条都没跑**，而汇总报「全部通过」。
+
+现在有两道防线：
+  1. run.py 用**文件路径**显式加载，不按名字搜索
+  2. verify_no_duplicate_test_names() 发现同名副本直接拒绝启动
 """
 
 from __future__ import annotations
@@ -481,44 +523,67 @@ class TestStochasticObvDonchian(TestCase):
         close = np.array([9., 10.5, 11., 12.5, 13.5, 11.5])
         k, d = stochastic(high, low, close, n=5, d=3)
 
-        # 关键：rolling_max/min 在窗口未满（i < n-1）时**不做有效性判定**，
-        # 直接返回 NaN，所以 hh>ll 为假 → rsv 落到默认值 50，直到 i=4 窗口满。
-        #   i=4: hh=max(10..14)=14, ll=min(8..12)=8 → RSV=(13.5-8)/(14-8)*100=91.6667
-        #   i=5: hh=14,             ll=min(9..11)=9 → RSV=(11.5-9)/(14-9)*100=50
+        # rolling_max/min 窗口未满（i < n-1）时返回 NaN → hh > ll 为假。
+        #
+        # ⚠️ 这里原来是「落到默认值 50」—— 那是**假数据**，已修掉。
+        #    窗口里根本没有 n 根 K 线，算不出任何有意义的 KDJ；
+        #    给一串 50 会让下游以为"市场中性"，而真相是"还不知道"。
+        #    现在预热期返回 NaN（NaN 语义 = 未知，而不是"中性"）。
+        #    i=4 起窗口才满：
+        #      i=4: hh=max(10..14)=14, ll=min(8..12)=8 → RSV=(13.5-8)/(14-8)*100=91.6667
+        #      i=5: hh=14,             ll=min(9..11)=9 → RSV=(11.5-9)/(14-9)*100=50
         self.near((13.5 - 8) / (14 - 8) * 100.0, 91.66666667, 1e-8,
                   "手算 RSV[4] = 91.6667")
         self.near((11.5 - 9) / (14 - 9) * 100.0, 50.0, 1e-12, "手算 RSV[5] = 50")
-        # K = sma(RSV, 3)：RSV 前 3 个都是默认值 50（因为 hh/ll 还是 NaN）
-        self.near(k[2], (50 + 50 + 50) / 3, 1e-9, "K[2] = mean(RSV[0..2]) = 50")
-        self.near(k[4], (50 + 50 + 91.66666667) / 3, 1e-8,
-                  "K[4] = mean(RSV[2..4]) = 63.8889")
-        self.near(k[5], (50 + 91.66666667 + 50) / 3, 1e-8,
-                  "K[5] = mean(RSV[3..5]) = mean(50, 91.6667, 50) = 63.8889")
-        # D = sma(K, 3)：窗口 [2..4] 里 K 全有值 → D[4] = 54.6296
-        self.near(d[4], (k[2] + k[3] + k[4]) / 3, 1e-9, "D[4] = mean(K[2..4]) = 54.6296")
-        self.near(d[5], (k[3] + k[4] + k[5]) / 3, 1e-9, "D[5] = mean(K[3..5]) = 59.2593")
-        self.is_nan(k[1], "K[1] 无有效 RSV → NaN")
 
-    def test_stochastic_warmup_produces_artificial_50s(self):
+        # 预热期：RSV 前 4 个是 NaN（窗口未满），K = sma(RSV, 3) 全部为 NaN
+        for i in range(4):
+            self.is_nan(k[i], f"K[{i}] 在预热期是 NaN（不是伪造的 50）")
+        # K = sma(RSV, 3)：第一个真正有值的窗口是 RSV[2..4]
+        # RSV[2]、RSV[3] 是 NaN（窗口未满），有效占比 1/3 < 75% → 仍为 NaN
+        self.is_nan(k[4], "K[4]：RSV[2..4] 只有 1 个有效值，占比不足 → NaN")
+
+        # 参考实现：对独立算出的 RSV 直接做 sma，语义必须一致
+        hh = rolling_max(high, 5)
+        ll = rolling_min(low, 5)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            rsv = np.where(hh > ll, (close - ll) / (hh - ll) * 100.0, np.nan)
+        self.true(bool(np.allclose(k, sma(rsv, 3), equal_nan=True)),
+                  "K == sma(RSV, 3)，且 NaN 不向后污染")
+        self.true(bool(np.allclose(d, sma(k, 3), equal_nan=True)),
+                  "D == sma(K, 3)")
+
+    def test_stochastic_warmup_is_nan_not_fake_50(self):
         """
-        对抗性（真实行为，值得记录）：KDJ 的**预热期不是 NaN**。
-        rolling_max/min 窗口未满时返回 NaN → hh > ll 为假 → RSV 落到默认值 50
-        → K = sma(RSV, 3) 从下标 2 起就是 50，D 从下标 d-1 起也有值。
-        也就是说「数据严重不足」时 K/D 不是缺失，而是一串看起来很正常的中性 50。
+        对抗性（真实行为，值得记录）：KDJ 的**预热期是 NaN，不是 50**。
+
+        ⚠️ 这条以前断言的是相反的行为 —— 那时实现会在窗口未满时
+           伪造一串 50。伪造值会让下游把「数据不足」误读成「市场中性地带」，
+           进而照常下单。这是静默算错，比报错危险得多。
+           修法：窗口未满就返回 NaN；只有 hh == ll（真的有零波幅）才置 50。
         """
         rng = np.random.default_rng(99)
         close = 100 + np.cumsum(rng.normal(0, 1.0, 200))
         high = close + np.abs(rng.normal(0, 0.8, 200))
         low = close - np.abs(rng.normal(0, 0.8, 200))
-        k, d = stochastic(high, low, close, n=14, d=3)
-        self.eq(int(np.flatnonzero(np.isfinite(k))[0]), 2,
-                "K 的第一个非 NaN 出现在下标 2（= d-1，不是 n-1=13）—— 预热期给的是默认 50")
-        self.eq(int(np.flatnonzero(np.isfinite(d))[0]), 4,
-                "D 的第一个非 NaN 在下标 4（= 2 + d - 1，因为还要再平滑一次）")
-        self.near(k[2], 50.0, 1e-12, "K[2] = 50（人工默认值，不是算出来的）")
-        self.near(k[12], 50.0, 1e-12, "K[12] 仍然是 50（窗口还没满）")
-        self.true(bool(np.isfinite(k[13])), "K[13] 之后才是真实计算值")
-        self.true(abs(k[13] - 50.0) > 1e-6, f"K[13]={k[13]:.4f}，已经偏离默认 50")
+        n, dd = 14, 3
+        k, d = stochastic(high, low, close, n=n, d=dd)
+
+        # 首个有效：rolling 窗口要 n 根 → 下标 n-1=13；
+        # 再过一次 sma(n=dd) 需 dd 个连续有效值 → K 从 13 + (dd-1) = 15 起
+        self.eq(int(np.flatnonzero(np.isfinite(k))[0]), n - 1 + (dd - 1),
+                f"K 的第一个非 NaN 在下标 {n - 1 + (dd - 1)}（= n-1 + d-1）")
+        # D = sma(K, 3) 再顺延 dd-1 位 → 17
+        self.eq(int(np.flatnonzero(np.isfinite(d))[0]), n - 1 + 2 * (dd - 1),
+                f"D 的第一个非 NaN 在下标 {n - 1 + 2 * (dd - 1)}（= n-1 + 2(d-1)）")
+        # 热身前一个位置必须是 NaN
+        self.is_nan(k[n + dd - 3], "K 在首个有效值之前是 NaN")
+        self.is_nan(k[0], "K[0] 是 NaN")
+        self.is_nan(d[0], "D[0] 是 NaN")
+        # 有效值不应恰好等于 50（除非真的算出来是 50）
+        self.true(abs(float(k[n - 1 + dd - 1]) - 50.0) > 1e-9,
+                  f"K 首个有效值 {k[n-1+dd-1]:.4f} 是算出来的，不是默认 50")
+
 
     def test_stochastic_is_chained_sma(self):
         """
@@ -534,7 +599,9 @@ class TestStochasticObvDonchian(TestCase):
         hh = rolling_max(high, 14)
         ll = rolling_min(low, 14)
         with np.errstate(divide="ignore", invalid="ignore"):
-            rsv = np.where(hh > ll, (close - ll) / (hh - ll) * 100.0, 50.0)
+            # ⚠️ 预热期是 NaN，不是 50 —— 参考实现必须跟着一起 NaN，
+            #    否则 allclose(equal_nan=True) 会因为一侧有值一侧 NaN 而假通过
+            rsv = np.where(hh > ll, (close - ll) / (hh - ll) * 100.0, np.nan)
         self.true(bool(np.allclose(k, sma(rsv, 3), equal_nan=True)),
                   "K == sma(RSV, 3)")
         self.true(bool(np.allclose(d, sma(k, 3), equal_nan=True)),
@@ -544,11 +611,21 @@ class TestStochasticObvDonchian(TestCase):
         self.not_nan(k[-1], "K 在末端算得出来")
 
     def test_stochastic_flat_window_defaults_to_50(self):
-        """hh == ll（零波幅）→ RSV 置 50，不除零。"""
-        flat = np.full(10, 5.0)
+        """
+        hh == ll（零波幅）→ RSV 置 50，不除零。
+
+        ⚠️ 与「预热期」的区别很重要：
+           · 窗口**未满**（数据不足）      → NaN，语义是「还不知道」
+           · 窗口已满但 hh == ll（真的横盘）→ 50，语义是「中性」
+           两者看起来都可能落到"50 附近"，但含义完全不同。
+        """
+        flat = np.full(20, 5.0)
         k, d = stochastic(flat, flat, flat, n=5, d=3)
+        # 窗口满（下标 >= 4）之后才谈得上"零波幅 → 50"
         self.near(k[-1], 50.0, 1e-9, "零波幅 → RSV 默认 50")
         self.near(d[-1], 50.0, 1e-9, "D 也是 50")
+        # 但窗口未满时仍然是 NaN —— 不能因为价格恒定就提前给 50
+        self.is_nan(k[0], "窗口未满 → 即使价格恒定也是 NaN")
 
     def test_obv_hand_computed(self):
         o = obv(np.array([10., 11., 10., 12.]), np.array([100., 200., 300., 400.]))
@@ -687,10 +764,10 @@ declare_counts({
                 "test_trending_market_high_adx": (4, 4),
                 "test_downtrend_direction": (1, 1),
                 "test_dm_exclusivity": (3, 3)},
-    "TestStochasticObvDonchian": {"test_stochastic_hand_computed": (8, 8),
-                                  "test_stochastic_warmup_produces_artificial_50s": (6, 6),
+    "TestStochasticObvDonchian": {"test_stochastic_hand_computed": (9, 9),
+                                  "test_stochastic_warmup_is_nan_not_fake_50": (6, 6),
                                   "test_stochastic_is_chained_sma": (4, 4),
-                                  "test_stochastic_flat_window_defaults_to_50": (2, 2),
+                                  "test_stochastic_flat_window_defaults_to_50": (3, 3),
                                   "test_obv_hand_computed": (2, 2),
                                   "test_donchian": (4, 4)},
     "TestComputeAndIndicatorSet": {"test_key_set_is_exactly_27": (4, 4),
