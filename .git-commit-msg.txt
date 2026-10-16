@@ -1,0 +1,35 @@
+fix: 修 verifier 报出的边界缺陷（NaN 保护 / 手数小数 / 坏数据静默）
+
+对抗性测试找出的真实缺陷，全部已修：
+
+① paper.py 全 NaN 行情直接崩溃
+   `if px <= 0` 对 NaN 是 False，保护失效 → math.floor(NaN) 抛 ValueError。
+   改成 `not (px > 0)`。paper_live.py 同样的地方一并修。
+
+② backtest.py 全 NaN 行情静默返回 NaN
+   不报错、权益曲线全污染，调用方拿不到「数据坏了」的信号。
+   现在：坏收盘价超阈值（≥3 根且 >5%）明确抛 ValueError；
+   少量坏 K 线按前一根结转权益并给 RuntimeWarning。
+   口径用「绝对根数 + 比例」双条件 —— 只用比例会让「4 根里 1 根坏」
+   的短序列被误判（25%），只用绝对数会放过长序列的系统性坏数据。
+
+③ paper.py / paper_live.py 的「加密可小数」没实现
+   math.floor 一律截断：10 万按 110 买只成交 909 股，白留 10 元。
+   抽 _round_to_lot()：lot<=1 保留 8 位小数，A 股仍必须整百。
+
+④ 测试侧同步更新（原断言固化的是旧缺陷行为）
+   · paper.成本 / paper_live.成交数学：期望值改为可小数
+   · paper.手数取整：用例改名并断言小数行为
+   · edge 全 NaN / 全 0：改为断言明确抛 ValueError
+   · edge 模拟盘全 NaN：改为断言优雅拒绝而非崩溃
+   · 所有 EXPECT_CHECK_COUNTS 同步
+
+⑤ Viewport.on 兼容 (fn) 与 (name, fn) 两种调用
+   原先调用方按 Chart 的风格传 (name, fn)，字符串被当回调收下、
+   真回调被丢弃 —— 静默失效，表现为视口按钮没反应。
+
+⑥ MACD/RSI 面板 Y 轴不再统计 K 线价幅
+   按 chart.type 决定；原先 RSI(0~100) 的轴被价格(~4000)撑成 4597~-216。
+
+测试结果：独立套件 808 断言 / 209 用例全过（原 801/207）；
+模块自检 8 套全过；统一入口 224 断言全过。

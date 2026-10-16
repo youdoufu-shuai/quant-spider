@@ -253,7 +253,7 @@ python quant/symbols.py         --selftest    # 25  （联网，首次跑 98 秒
 **独立测试套件**（`quant/tests/`，纯离线，不依赖 pytest）：
 
 ```bash
-python quant/tests/run.py        # 706 条断言 / 186 个用例
+python quant/tests/run.py        # 808 条断言 / 209 个用例
 ```
 
 **统一入口**（跑全部，含 Node 测试）：
@@ -274,6 +274,21 @@ node tools/run-tests.mjs --offline    # 只跑离线的，4.6 秒
 - `Viewport.on(fn)` 的签名是单参数，但我按 `Chart.on(name, fn)` 的方式调用 —— 字符串被当成回调收下、真回调被丢弃，表现为"视口按钮没反应"。
 
 这类问题看代码基本发现不了，只能靠测试。
+
+### 对抗性测试抓到的边界缺陷
+
+独立套件是"往坏里想"写的，它找出的几个真问题值得一提（都已修）：
+
+| 缺陷 | 为什么危险 | 修法 |
+|---|---|---|
+| `paper.py` 全 NaN 行情**直接崩溃** | `if px <= 0` 对 NaN 是 **False**，保护失效 → `math.floor(nan)` 抛 `ValueError` | 改成 `not (px > 0)` |
+| `backtest.py` 全 NaN 行情**静默返回 NaN** | 不报错、权益曲线全污染，调用方拿不到"数据坏了"的信号 | 坏数据超阈值（≥3 根且 >5%）明确抛错；少量坏 K 线按前一根结转并警告 |
+| `paper.py` 的"加密可小数"**没实现** | `math.floor` 一律截断：10 万按 110 买只成交 909 股，白留 10 元 | 抽 `_round_to_lot()`：lot≤1 保留 8 位小数，A 股仍整百 |
+| `Viewport.on` 签名与调用方不一致 | 对象**静默丢弃回调**，按钮点了没反应 | 兼容 `on(fn)` 与 `on(name, fn)` 两种写法 |
+| MACD/RSI 面板 Y 轴统计了 K 线价幅 | RSI（0~100）的轴被价格（~4000）撑成 4597~−216，曲线压成直线 | 按 `chart.type` 决定是否纳入 bars |
+
+其中"NaN 与 0 比较恒为 False"这个坑出现了两次（`paper.py` 和 `backtest.py`），
+而且两次的表现完全不同：一个崩溃、一个静默。这正是为什么要专门测边界。
 
 ### CI
 

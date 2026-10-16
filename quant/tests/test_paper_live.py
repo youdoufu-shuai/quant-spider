@@ -18,6 +18,7 @@ PaperSession 的行情入口 pull_market() 会真的去 fetch，所以这里不�
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -87,10 +88,29 @@ class TestOrderValidation(TestCase):
                     "还没行情 → ValueError（提示先刷新）")
 
     def test_buy_without_enough_cash(self):
-        s = session_with_prices([100.0, 100.0], initial=50.0)
+        """
+        资金不足 → 被拒。
+
+        ⚠️ 2026-10-16：加密 lot=1 现在允许小数，"50 元买 100 元的东西"
+        可以买 0.5 个，不再是资金不足。真正买不起的场景要挑 **lot=100 的 A 股**：
+        50 元连一手（100 股 × 100 元 = 10000 元）都买不到。
+        """
+        s = session_with_prices([100.0, 100.0], market="ashare", initial=50.0)
         o = s.place_order("buy")
         self.eq(o.state, OrderState.REJECTED.value, "资金不足 → 被拒")
         self.true("资金不足" in (o.reject_reason or ""), f"原因：{o.reject_reason}")
+
+    def test_buy_fractional_qty_when_lot_is_one(self):
+        """
+        加密 lot=1：50 元买 100 元的标的 → 0.5 个（成交），不是被拒。
+
+        用 market 单（立刻成交）验证数量；默认的 next_open 单在下单时
+        还只是 pending，看不到成交量。
+        """
+        s = session_with_prices([100.0, 100.0], initial=50.0)
+        o = s.place_order("buy", order_type="market")
+        self.eq(o.state, OrderState.FILLED.value, "能买 0.5 个（加密可小数）")
+        self.near(o.qty, 0.5, 1e-9, "数量 0.5")
 
     def test_sell_without_position(self):
         s = session_with_prices([100.0, 100.0])
@@ -138,13 +158,20 @@ class TestFillMath(TestCase):
         self.near(s.fees, 0.0, 1e-12, "零成本 → 无手续费")
 
     def test_buy_math_with_costs(self):
+        """
+        带成本买入：成交价 = 价×(1+滑点)，数量 = 资金/(价×(1+费率))。
+
+        ⚠️ 2026-10-16：加密 lot=1 允许小数，数量不再是 `int(...)` 截断值。
+        原实现 100000 元按 100.2 买入只成交 997 个，白留约 1.5 元现金。
+        """
         c = Costs(commission=0.001, slippage=0.002)
         s = session_with_prices([100.0, 100.0], costs=c, initial=100_000.0)
         o = s.place_order("buy", order_type="market")
         px = 100.0 * 1.002
-        qty = float(int(100_000.0 / (px * 1.001)))
+        qty = math.floor(100_000.0 / (px * 1.001) * 1e8) / 1e8
         self.near(o.fill_price, px, 1e-9, "成交价 = 价 × (1+滑点) = 100.2")
-        self.near(o.qty, qty, 1e-9, "数量按 (价×(1+费率)) 计算")
+        self.near(o.qty, qty, 1e-9, "数量按 (价×(1+费率)) 计算（可小数）")
+        self.true(o.qty > 997.0, f"比旧的截断值 997 大（{o.qty:.6f}）")
         self.near(o.fee, qty * px * 0.001, 1e-6, "手续费 = 成交额 × 0.1%")
 
     def test_sell_realized_pnl_hand_computed(self):
@@ -319,12 +346,16 @@ declare_counts({
     "TestOrderValidation": {"test_invalid_side_and_type": (2, 2),
                             "test_no_market_data": (1, 1),
                             "test_buy_without_enough_cash": (2, 2),
+                            # 2026-10-16 新增：加密 lot=1 允许小数，
+                            # 原来"50 元买 100 元"那条不再属于资金不足场景
+                            "test_buy_fractional_qty_when_lot_is_one": (2, 2),
                             "test_sell_without_position": (2, 2),
                             "test_sell_more_than_held": (2, 2),
                             "test_t_plus_one_same_bar_sell": (3, 3),
                             "test_crypto_has_no_t_plus_one": (1, 1)},
     "TestFillMath": {"test_buy_math_hand_computed": (8, 8),
-                     "test_buy_math_with_costs": (3, 3),
+                     # 手数允许小数后多了一条「大于旧截断值」的断言：3 → 4
+                     "test_buy_math_with_costs": (4, 4),
                      "test_sell_realized_pnl_hand_computed": (8, 8),
                      "test_average_price_on_two_buys": (2, 2),
                      "test_lot_size_rounding_on_ashare": (2, 2),

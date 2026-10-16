@@ -340,6 +340,20 @@ class PaperSession:
     # --------------------------------------------------------
     #  下单
     # --------------------------------------------------------
+    def _round_lot(self, qty: float) -> float:
+        """
+        把数量对齐到「手」的整数倍。
+
+        加密手数为 1 时允许小数 —— 否则 10 万本金按 8 万/个的 BTC 买入
+        只能成交 1 个，剩下 2 万白白闲置。A 股仍必须整百股。
+        """
+        q = float(qty)
+        if not (q > 0):
+            return 0.0
+        if self.lot <= 1:
+            return math.floor(q * 1e8) / 1e8
+        return float(math.floor(q / self.lot) * self.lot)
+
     def place_order(self, side: str, qty: float | None = None,
                     order_type: str = OrderType.NEXT_OPEN.value,
                     reason: str = "", source: str = "manual") -> PaperOrder:
@@ -356,18 +370,19 @@ class PaperSession:
             raise ValueError(f"type 必须是 next_open 或 market，收到 {order_type!r}")
 
         px = self.price
-        if px <= 0:
+        # ⚠️ 同样要写成 not (px > 0)：NaN <= 0 是 False，保护会漏过 NaN。
+        if not (px > 0):
             raise ValueError("还没有行情，先刷新一次")
 
         # 数量计算
         if qty is None or qty <= 0:
             if sd == Side.BUY:
                 raw = self.cash / (self.costs.buy_price(px) * (1 + self.costs.commission))
-                qty = math.floor(raw / self.lot) * self.lot
+                qty = self._round_lot(raw)
             else:
                 qty = self.qty
         else:
-            qty = math.floor(float(qty) / self.lot) * self.lot if self.lot > 1 else float(qty)
+            qty = self._round_lot(float(qty))
 
         o = PaperOrder(
             id=str(uuid.uuid4())[:8], side=sd.value, type=ot.value, qty=qty,
@@ -629,10 +644,9 @@ class PaperSession:
 
         if dec.action == "buy" and delta_value > 0:
             px = self.price * (1 + self.costs.slippage) * (1 + self.costs.commission)
-            qty = math.floor((delta_value / px) / self.lot) * self.lot
+            qty = self._round_lot(delta_value / px)
             # 不能超过可用现金
-            afford = math.floor(
-                (self.cash / (px * (1 + self.costs.commission))) / self.lot) * self.lot
+            afford = self._round_lot(self.cash / (px * (1 + self.costs.commission)))
             qty = min(qty, afford)
             if qty < self.lot:
                 self._log("auto", f"目标仓位需买入 {delta_value:,.0f}，"
@@ -641,7 +655,7 @@ class PaperSession:
             self.place_order("buy", qty, OrderType.NEXT_OPEN.value,
                              reason=dec.summary(), source="auto")
         elif dec.action == "sell" and delta_value < 0:
-            qty = math.floor(min(-delta_value / self.price, self.qty) / self.lot) * self.lot
+            qty = self._round_lot(min(-delta_value / self.price, self.qty))
             if self.lot > 1 and qty == 0 and self.qty > 0:
                 qty = self.qty        # 目标清仓但不足一手时，一次卖掉全部
             if qty <= 0:

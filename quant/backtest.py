@@ -44,6 +44,7 @@ import argparse
 import json
 import math
 import sys
+import warnings
 from dataclasses import dataclass, field, asdict
 
 import numpy as np
@@ -80,8 +81,14 @@ class Costs:
 
 
 # 各市场的合理默认成本
-MARKET_COSTS = {
-    "ashare": Costs(commission=0.0003, slippage=0.0005, min_commission=0.0),
+# 收盘价异常（NaN/Inf/≤0）的容忍口径。**两个条件同时满足**才判定数据源坏了：
+#   · 至少 BAD_PRICE_MIN_COUNT 根坏 —— 避免短序列被单根坏数据误判
+#   · 且占比超过 BAD_PRICE_RATIO —— 避免长序列里少量坏数据被放过
+# 未达阈值时按前一根结转权益，并给一条 RuntimeWarning。
+BAD_PRICE_RATIO = 0.05
+BAD_PRICE_MIN_COUNT = 3
+
+MARKET_COSTS = {    "ashare": Costs(commission=0.0003, slippage=0.0005, min_commission=0.0),
     "crypto": Costs(commission=0.0010, slippage=0.0005, min_commission=0.0),
 }
 
@@ -221,6 +228,45 @@ def run_backtest(series: Series, signals: SignalSet,
     closes = np.array([b.close for b in series.bars], dtype=float)
     iso = [b.as_dict()["iso"] for b in series.bars]
 
+    # ── 行情有效性检查 ────────────────────────────────────────
+    # ⚠️ 没有这个检查时，全 NaN 行情会**静默算出一堆 NaN**：
+    #    equity[i] = cash + shares*closes[i]，第 0 根 0*nan 就把整条权益曲线
+    #    污染成 NaN，而 total_return/final 也跟着 NaN —— 不抛异常、不打日志，
+    #    调用方完全拿不到「数据坏了」的信号（verifier 发现）。
+    #    这类"安静的坏数据"比崩溃更危险：崩溃你会立刻知道，静默 NaN 不会。
+    #
+    # ⚠️ 判定用**比例**而不是"有一根坏就拒"：
+    #    真实行情里偶发一两根脏数据（停牌、采集错误）很常见，为它拒绝整个
+    #    序列太粗暴 —— 单根坏数据的权益按前一根结转即可，对结果影响可忽略。
+    #    但**大片**数据坏掉就是数据源出问题了，必须明确报错，
+    #    而不是给一堆看着像样的数字。
+    #
+    # ⚠️ 只检查**收盘价**：它决定权益曲线；开盘价只影响那一根能否成交，
+    #    由下面的 `if px > 0` 逐根跳过（有意行为，不是缺陷）。
+    n_bars = len(closes)
+    n_bad = int(np.count_nonzero(~np.isfinite(closes)))
+    n_nonpos = int(np.count_nonzero(closes <= 0))
+    n_suspect = n_bad + n_nonpos
+    bad_ratio = n_suspect / n_bars
+
+    # 双条件：既要**绝对根数够多**，也要**占比够高**，才判定数据源坏了。
+    # 只用比例是不行的：4 根里 1 根坏就是 25%，短序列会被误判成"数据源坏了"。
+    # 只用绝对数也是不行的：5000 根里 100 根坏（2%）也是明确的数据问题。
+    if n_suspect >= BAD_PRICE_MIN_COUNT and bad_ratio > BAD_PRICE_RATIO:
+        raise ValueError(
+            f"行情数据无效：{n_bars} 根里有 {n_suspect} 根收盘价不可用"
+            f"（{n_bad} 根 NaN/Inf，{n_nonpos} 根 ≤ 0），占 {bad_ratio:.1%}，"
+            f"超过容忍上限（{BAD_PRICE_MIN_COUNT} 根且 "
+            f"{BAD_PRICE_RATIO:.0%}）。请检查数据源 —— 不要拿坏数据做回测。")
+    if n_suspect:
+        # 少量坏数据：权益按前一根结转（见下方 bad_mask 的用法），这里只提醒
+        warnings.warn(
+            f"回测跳过 {n_suspect} 根收盘价异常的 K 线（共 {n_bars} 根，"
+            f"{bad_ratio:.1%}），权益按前一根结转",
+            RuntimeWarning, stacklevel=2)
+    # 坏 K 线掩码：权益不能直接用 closes[i]，否则一根 NaN 污染整条曲线
+    bad_mask = ~(np.isfinite(closes) & (closes > 0))
+
     pos_target = signals.position          # 目标仓位（第 i 根收盘后决定）
     cash = initial
     shares = 0.0
@@ -239,7 +285,11 @@ def run_backtest(series: Series, signals: SignalSet,
 
             if want == 1 and held == 0:
                 px = costs.buy_price(opens[i])
-                if px > 0:
+                # NaN 的比较永远是 False，所以 `px > 0` 恰好能挡住 NaN ——
+                # 但这是**碰巧**成立，不是有意设计。写成 not (px > 0) 才是
+                # 明确表达「不是有效正数就跳过」，也免得日后有人改成 px >= 0
+                # 就把 NaN 放进来了。（paper.py 那边原本就是反着写的，直接崩。）
+                if px > 0 and px == px:
                     qty = cash / (px * (1 + costs.commission))
                     fee = costs.fee(qty * px)
                     cash -= qty * px + fee
@@ -273,7 +323,13 @@ def run_backtest(series: Series, signals: SignalSet,
 
         if shares > 0:
             bars_in_market += 1
-        equity[i] = cash + shares * closes[i]
+        # ⚠️ 坏 K 线的收盘价不能直接乘进去 —— 一根 NaN 会让 equity[i] 变 NaN，
+        #    而后面 total_return / sharpe / drawdown 全依赖 equity，整条曲线报废。
+        #    按前一根权益结转：这只是"不知道值多少"，比污染整条曲线诚实。
+        if bad_mask[i]:
+            equity[i] = equity[i - 1] if i > 0 else cash
+        else:
+            equity[i] = cash + shares * closes[i]
 
     # ---- 未平仓：按最后收盘价计入权益，但**不计入交易统计** ----
     open_position = shares > 0

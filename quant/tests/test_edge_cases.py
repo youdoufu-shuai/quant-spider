@@ -239,38 +239,40 @@ class TestAllNanInput(TestCase):
         self.true(all(int(s.position.sum()) == 0 for s in sigs.values()),
                   "全 NaN 行情下没有任何策略开仓（NaN 比较全为 False）")
 
-    def test_backtest_on_all_nan_does_not_crash(self):
+    def test_backtest_on_all_nan_raises(self):
         """
-        ⚠️ 缺陷（见报告）：全 NaN 行情下回测**不抛异常**，而是安静地返回
-        total_return = nan、final = nan、equity_curve 全是 nan。
-        调用方拿不到「数据坏了」的信号，只会看到一片 NaN 指标。
+        ✅ 修正后（2026-10-16）：全 NaN 行情**明确抛 ValueError**。
+
+        原缺陷：回测不抛异常，而是安静地返回 total_return = nan、final = nan、
+        equity_curve 全是 nan。调用方拿不到「数据坏了」的信号，
+        只会看到一片 NaN 指标 —— 这类静默错误比崩溃危险得多。
+
+        现在 run_backtest 在入口检查收盘价，坏数据超过阈值（≥3 根且 >5%）
+        就报错。本例 30 根全 NaN，必然触发。
         """
         s = allnan_series(30)
+        self.raises(ValueError,
+                    lambda: run_backtest(s, sig_pos([0] * 30), costs=ZERO),
+                    "全 NaN + 空仓信号 → 明确 ValueError（不再静默返回 NaN）")
+        # 少量坏数据则容忍：只警告，不中断
+        partly = mk_series([100.0, float("nan")] + [100.0 + i for i in range(28)])
         ok, r = self.no_raise(
-            lambda: run_backtest(s, sig_pos([0] * 30), costs=ZERO),
-            "全 NaN + 空仓信号 → 回测不抛异常（这本身是个问题）")
+            lambda: run_backtest(partly, sig_pos([0] * 30), costs=ZERO),
+            "单根 NaN（30 根里 1 根）→ 容忍，不抛异常")
         if ok:
-            self.true(np.isnan(r.total_return),
-                      f"total_return 是 NaN（不报错、不兜底）：{r.total_return}")
-            self.true(np.isnan(r.equity_curve[0]),
-                      f"第 0 根权益就是 NaN（现金 10000 + 0×NaN）：{r.equity_curve[0]}")
-            self.true(np.isnan(r.final), f"final 也是 NaN：{r.final}")
+            self.true(np.isfinite(r.total_return),
+                      f"权益没被单根 NaN 污染：total_return={r.total_return}")
 
     def test_backtest_with_all_in_signal_on_nan_prices(self):
         """
-        全 NaN 价格 + 全程看多信号：buy_price(NaN) = NaN，`px > 0` 为 False
-        → 静默不成交。但权益仍然被 NaN 收盘价污染（见上一个用例）。
+        ✅ 修正后：全 NaN 价格 + 全程看多信号同样抛 ValueError ——
+        数据源坏了就该停下来，而不是给一个"没成交、权益 NaN"的结果。
         """
         s = allnan_series(30)
-        ok, r = self.no_raise(
-            lambda: run_backtest(s, sig_pos([1] * 30), costs=ZERO, initial=10_000.0),
-            "全 NaN 价格 + 看多信号 → 回测不抛异常")
-        if ok:
-            self.eq(r.trade_count, 0, "一根都没买成（px > 0 为 False）")
-            self.true(r.open_position is not True or r.open_position is False,
-                      "没有持仓")
-            self.true(np.isnan(r.final),
-                      "⚠️ 但期末权益仍是 NaN —— NaN 通过收盘价漏进了权益曲线")
+        self.raises(ValueError,
+                    lambda: run_backtest(s, sig_pos([1] * 30), costs=ZERO,
+                                         initial=10_000.0),
+                    "全 NaN 价格 + 看多信号 → ValueError")
 
 
 class TestConstantPrice(TestCase):
@@ -513,12 +515,18 @@ class TestDegenerateBacktestAndPaper(TestCase):
         self.near(r.avg_win, 0.0, 1e-12, "零利润不计为盈利")
 
     def test_backtest_with_zero_prices(self):
+        """
+        ✅ 修正后：全 0 价格明确抛 ValueError。
+
+        原行为是"买不进（px>0 保护）→ 收益 0"，看起来无害，但 0 价格本身
+        就是坏数据（真实行情不可能为 0），算出"收益 0"会让人以为策略
+        在中性行情里表现平稳，实际是数据源坏了。
+        """
         s = mk_series([0.0] * 10)
-        ok, r = self.no_raise(
-            lambda: run_backtest(s, sig_pos([1] * 10), costs=ZERO, initial=10_000.0),
-            "全 0 价格 → 回测不抛异常")
-        if ok:
-            self.near(r.total_return, 0.0, 1e-9, "买不进（px>0 保护）→ 收益 0")
+        self.raises(ValueError,
+                    lambda: run_backtest(s, sig_pos([1] * 10), costs=ZERO,
+                                         initial=10_000.0),
+                    "全 0 价格 → ValueError（坏数据不静默）")
 
     def test_backtest_annual_return_guard_on_loss(self):
         """总收益为负时不能对负数开根号（会变成复数/NaN）。"""
@@ -545,28 +553,36 @@ class TestDegenerateBacktestAndPaper(TestCase):
             rejects = [o for o in pt.orders if o.state.value == "rejected"]
             self.true(len(rejects) >= 1, "有被拒委托")
 
-    def test_paper_with_all_nan_prices_crashes(self):
+    def test_paper_with_all_nan_prices_rejected_not_crashed(self):
         """
-        ⚠️ 缺陷（见报告）：全 NaN 行情会让 PaperTrader 抛
-        `ValueError: cannot convert float NaN to integer`。
+        ✅ 修正后（2026-10-16）：全 NaN 行情下模拟盘**不再崩溃**，
+        而是把买单正常拒掉（带明确原因），回放能跑完。
 
+        原缺陷：抛 `ValueError: cannot convert float NaN to integer`。
         根因链（paper.py:300-307）：
             px = self.costs.buy_price(raw)      # raw = bar.open = NaN
             if px <= 0:                          # NaN <= 0 是 False → 保护不生效！
-                ...
-            raw_qty = self.cash / (px * ...)     # NaN
             qty = math.floor(raw_qty / lot)      # ← 这里抛 ValueError
 
-        与回测的 `if px > 0` 相比，这里是 `if px <= 0` —— 对 NaN 来说是
-        「漏过去」而不是「拦住」。注意 `not (px > 0)` 才是正确的写法。
+        修法是把保护写成 `not (px > 0)` —— 对 NaN 得到 True，能正确拦住。
+        这条断言的是"优雅拒绝"而不是"崩溃"：坏数据应该产生一张被拒委托，
+        而不是让整个回放挂掉（用户至少要能看到发生了什么）。
         """
         pt = PaperTrader(allnan_series(6), sig_pos([1] * 6), costs=ZERO,
                          initial=10_000.0)
-        self.raises(ValueError, lambda: pt.run_all(),
-                    "全 NaN 价格 → 模拟盘抛 ValueError（真实缺陷，不是假设）")
-        # 定位根因：NaN 与 0 的比较
-        self.false(float("nan") <= 0, "NaN <= 0 为 False —— 所以那个保护拦不住 NaN")
-        self.false(float("nan") > 0, "NaN > 0 也为 False —— 回测用的写法才拦得住")
+        ok, _ = self.no_raise(lambda: pt.run_all(),
+                              "全 NaN 价格 → 模拟盘不崩溃")
+        if ok:
+            self.eq(len(pt.fills), 0, "一笔都没成交（价格无效）")
+            rejects = [o for o in pt.orders if o.state.value == "rejected"]
+            self.true(len(rejects) >= 1, f"有被拒委托（{len(rejects)} 张）")
+            self.true(any("NaN" in (o.reject_reason or "") or "价格" in (o.reject_reason or "")
+                          for o in rejects),
+                      "拒绝原因说清了是价格问题："
+                      + str([o.reject_reason for o in rejects][:2]))
+        # 根因备忘：NaN 的比较全是 False —— 这正是当初写错的原因
+        self.false(float("nan") <= 0, "NaN <= 0 为 False —— 所以 px <= 0 拦不住 NaN")
+        self.true(not (float("nan") > 0), "not (NaN > 0) 为 True —— 正确写法")
 
     def test_paper_empty_series(self):
         s = Series("t", "crypto", "T", "空", "1d", (), 0.0)
@@ -640,8 +656,11 @@ declare_counts({
                         "test_bollinger_with_nan": (2, 2),
                         "test_nan_volume_does_not_break_obv": (2, 2),
                         "test_strategies_on_all_nan_never_signal": (1, 1),
-                        "test_backtest_on_all_nan_does_not_crash": (4, 4),
-                        "test_backtest_with_all_in_signal_on_nan_prices": (4, 4)},
+                        # 2026-10-16：行为修正后同步更新
+                        #   · 全 NaN 现在明确抛 ValueError（不再是静默 NaN）
+                        #   · 用例改名 _does_not_crash → _raises
+                        "test_backtest_on_all_nan_raises": (3, 3),
+                        "test_backtest_with_all_in_signal_on_nan_prices": (1, 1)},
     "TestConstantPrice": {"test_bollinger_bands_collapse": (5, 5),
                           "test_no_division_by_zero_anywhere": (5, 5),
                           "test_close_equal_but_hl_spread_still_gives_atr": (2, 2),
@@ -665,11 +684,13 @@ declare_counts({
                               "test_ai_context_with_empty_indicator_set": (2, 2)},
     "TestDegenerateBacktestAndPaper": {
         "test_backtest_with_constant_prices": (3, 3),
-        "test_backtest_with_zero_prices": (2, 2),
+        # 2026-10-16：全 0 价格现在明确抛 ValueError，断言数 2 → 1
+        "test_backtest_with_zero_prices": (1, 1),
         "test_backtest_annual_return_guard_on_loss": (2, 2),
         "test_paper_with_constant_prices": (3, 3),
         "test_paper_with_zero_prices": (3, 3),
-        "test_paper_with_all_nan_prices_crashes": (3, 3),
+        # 用例改名：_crashes → _rejected_not_crashed（现在优雅拒绝而非崩溃）
+        "test_paper_with_all_nan_prices_rejected_not_crashed": (6, 6),
         "test_paper_empty_series": (3, 3),
         "test_backtest_two_bars_rejected": (1, 1)},
     "TestStrategyEdgeSignals": {"test_constant_prices_produce_no_signals": (1, 1),

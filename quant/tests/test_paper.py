@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -137,28 +138,36 @@ class TestCostsAndFees(TestCase):
 
     def test_buy_price_and_fee_hand_computed(self):
         """
-        验证「买入价 = 开盘×(1+滑点)」「数量 = floor(资金/(价×(1+费率)))」
+        验证「买入价 = 开盘×(1+滑点)」「数量 = 资金/(价×(1+费率))」
         「手续费 = 成交额×费率」三条公式，以及现金扣减。
 
-        注意：数量是**先截断再乘价**，所以期望值要用实际成交量算，
-        不能反过来假定成交量正好是 1000（浮点下 1000.4999… 也很常见）。
+        ⚠️ 数量口径（2026-10-16 修正）：
+        `mk()` 默认 market="crypto"，lot_size=1，**允许小数**。
+        原实现用 `math.floor` 一律截断成整数 —— 201000 元按 200.4 买入
+        只成交 1001 股，白留约 199 元现金；注释里却写着「加密可小数」。
+        现在是真实可成交数量（保留 8 位小数），所以期望值不再是整数。
+        A 股（lot_size=100）仍必须整百股，见 test_ashare_lot_still_aligns_to_hundred。
         """
         c = Costs(commission=0.001, slippage=0.002)
         s = mk([100., 200.], opens=[100., 200.])
         px = 200.0 * 1.002                     # 买入抬价 → 200.4
         initial = 201_000.0
         raw_qty = initial / (px * 1.001)
-        expect_qty = float(int(raw_qty))       # 向下取整到整数（lot_size=1 也取整）
+        expect_qty = math.floor(raw_qty * 1e8) / 1e8   # lot=1 → 8 位小数
         pt = trader(s, [1, 1], costs=c, initial=initial).run_all()
         f = pt.fills[0]
         self.near(f.price, px, 1e-9, "买入价 = 开盘 × (1+滑点) = 200.4")
         self.near(f.qty, expect_qty, 1e-9,
-                  f"数量 = floor(资金/(价×(1+费率))) = {expect_qty:.0f}")
+                  f"数量 = 资金/(价×(1+费率)) = {expect_qty:.6f}（加密可小数）")
+        self.true(f.qty > 1001.0, f"比旧的截断值 1001 大（{f.qty:.6f}）")
         self.near(f.fee, expect_qty * px * 0.001, 1e-6, "手续费 = 成交额 × 0.1%")
         self.near(pt.cash, initial - expect_qty * px - f.fee, 1e-6,
                   "现金 = 初始 − 成交额 − 手续费")
         self.near(pt.snapshot().total_fees, round(f.fee, 2), 1e-6, "累计手续费只算这一次")
-        self.true(pt.cash < initial * 0.01, "剩余现金不到初始资金的 1%（其余都投进去了）")
+        # 修正后剩余现金应远小于 1%：几乎全部资金都投进去了。
+        # 旧实现留了约 199 元（0.099%），修正后只剩零头。
+        self.true(pt.cash < initial * 0.0001,
+                  f"剩余现金不到初始资金的 0.01%（实际 {pt.cash:.6f} 元）")
 
     def test_sell_price_direction(self):
         c = Costs(commission=0.0, slippage=0.01)
@@ -293,17 +302,17 @@ class TestLotSize(TestCase):
         self.true(pt.snapshot().position_qty > 1.0,
                   f"能买到上千股（{pt.snapshot().position_qty}）")
 
-    def test_lot_one_still_truncates_to_whole_units(self):
+    def test_lot_one_allows_fractional_units(self):
         """
-        对抗性发现（真实行为）：`qty = math.floor(raw_qty / lot_size) * lot_size`
-        对 lot_size=1 同样执行取整 —— math.floor 返回 int，所以
-        「加密可以小数」在 paper.py 里**并未实现**，数量永远是整数股/币。
+        修正后（2026-10-16）：`lot_size=1` 时**允许小数**，与注释一致。
 
-        实测：100000 元按 110 买入 → 909 股（应为 909.0909…），
-        白留在现金里 10 元，权益被系统性低估一点点。
-        生产影响很小（BTC 一手约 12 万美金，取整误差 < 0.1%），
-        但注释与实现不一致，且对低价币（DOGE 0.1 美元）相当于最多丢掉
-        1 个币的资金占用效率。
+        原实现的对抗性发现：`qty = math.floor(raw_qty / lot_size) * lot_size`
+        对 lot_size=1 也执行取整 —— math.floor 返回 int，所以「加密可以小数」
+        在 paper.py 里并未实现，100000 元按 110 买入只成交 909 股，
+        白留 10 元现金。
+
+        现在用 `_round_to_lot()`：lot<=1 保留 8 位小数，lot>1 仍按手对齐。
+        这条用例断言**修正后**的正确行为（原用例断言的是缺陷本身）。
         """
         import math as _math
         s = mk([110., 110.], market="crypto")
@@ -311,14 +320,24 @@ class TestLotSize(TestCase):
         pt.run_all()
         qty = pt.fills[0].qty
         self.eq(pt.lot_size, 1, "加密 lot_size = 1")
-        self.eq(qty, 909, "数量被截断成整数 909（不是 909.0909…）")
-        self.true(isinstance(qty, int),
-                  f"类型是 int（math.floor 的返回值）：{type(qty).__name__}")
-        self.near(pt.cash, 10.0, 1e-9, "白留 10 元现金：100000 - 909×110")
-        self.true(_math.floor(100_000.0 / 110.0 / 1) * 1 == 909,
-                  "根因：math.floor 返回 int，乘 1 也变不回 float")
-        self.true(pt.cash > 0 and pt.cash < 110.0,
-                  "剩下的现金不足一股，只能闲置 —— 这就是取整的机会成本")
+        expect = _math.floor(100_000.0 / 110.0 * 1e8) / 1e8
+        self.near(qty, expect, 1e-9,
+                  f"数量是真实可成交值 {expect:.8f}，不是截断的 909")
+        self.true(qty > 909.0, f"比截断值大（{qty:.8f} > 909）")
+        self.true(isinstance(qty, float), f"类型是 float：{type(qty).__name__}")
+        # 现金应该基本用完（不足以再买最小单位）
+        self.true(pt.cash < 110.0, f"剩余现金不足最小单位（{pt.cash:.6f} 元）")
+        self.true(pt.cash < 1.0, f"修正后剩余远小于 1 元（实际 {pt.cash:.6f}）")
+
+    def test_ashare_lot_still_aligns_to_hundred(self):
+        """A 股必须整百股 —— 修正加密的小数行为后，A 股规则不能被带偏。"""
+        s = mk([100., 100.], market="ashare")
+        pt = PaperTrader(s, sig_pos([1, 1]), costs=ZERO, initial=10_050.0)
+        pt.run_all()
+        qty = pt.fills[0].qty
+        self.eq(pt.lot_size, 100, "A 股 lot_size = 100")
+        self.near(qty % 100, 0.0, 1e-9, f"A 股数量必须是 100 的整数倍（实际 {qty}）")
+        self.eq(qty, 100.0, "10050 元只能买 100 股（整百）")
 
 
 class TestSellAndPnL(TestCase):
@@ -467,7 +486,7 @@ declare_counts({
         "test_no_signal_no_trades": (3, 3),
         "test_run_all_returns_self_and_steps_exactly_n_times": (3, 3),
         "test_signal_not_acted_on_last_bar": (2, 2)},
-    "TestCostsAndFees": {"test_buy_price_and_fee_hand_computed": (6, 6),
+    "TestCostsAndFees": {"test_buy_price_and_fee_hand_computed": (7, 7),
                          "test_sell_price_direction": (4, 4),
                          "test_cost_reduces_equity": (1, 1)},
     "TestTPlusOne": {"test_buy_then_same_bar_sell_is_rejected": (3, 3),
@@ -479,7 +498,10 @@ declare_counts({
     "TestLotSize": {"test_ashare_rounds_down_to_100": (3, 3),
                     "test_insufficient_cash_is_rejected": (3, 3),
                     "test_crypto_lot_is_one": (2, 2),
-                    "test_lot_one_still_truncates_to_whole_units": (6, 6)},
+                    # 2026-10-16：用例改名并改断言 —— 原断言的是缺陷本身
+                    # （「数量被截断成整数 909」），修正后加密允许小数。
+                    "test_lot_one_allows_fractional_units": (6, 6),
+                    "test_ashare_lot_still_aligns_to_hundred": (3, 3)},
     "TestSellAndPnL": {"test_round_trip_pnl_hand_computed": (12, 12),
                        "test_sell_without_position_is_rejected": (2, 2),
                        "test_win_stats": (4, 4),

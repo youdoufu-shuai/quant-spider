@@ -56,6 +56,23 @@ for _s in (sys.stdout, sys.stderr):
         pass
 
 
+def _round_to_lot(qty: float, lot_size: int) -> float:
+    """
+    把数量对齐到「手」的整数倍。
+
+    ⚠️ 手数为 1 时（加密）应当**允许小数** —— 这是类注释里承诺过的行为。
+    用 math.floor 会一律截断成整数：100000 元按 110 买入只成交 909 股，
+    白留 10 元现金不用。对 BTC 这种高价标的误差不大，但语义是错的。
+    （verifier 发现：注释说"可小数"，实现却截断一切。）
+
+    A 股 lot_size=100，仍然必须是 100 的整数倍（真实规则）。
+    """
+    if lot_size <= 1:
+        # 保留 8 位小数：足够表达 0.00000001 BTC 级别的仓位，又不会浮点噪声
+        return math.floor(float(qty) * 1e8) / 1e8
+    return float(math.floor(float(qty) / lot_size) * lot_size)
+
+
 def default_initial(market: str) -> float:
     """
     各市场的合理默认初始资金。
@@ -298,13 +315,20 @@ class PaperTrader:
 
         if o.side == Side.BUY:
             px = self.costs.buy_price(raw)
-            if px <= 0:
+            # ⚠️ 必须写成 `not (px > 0)` 而不是 `px <= 0`。
+            #    NaN 参与任何比较都是 False —— 所以 NaN <= 0 是 False，
+            #    保护会被**跳过**，紧接着 math.floor(nan) 抛
+            #    「ValueError: cannot convert float NaN to integer」直接崩。
+            #    而 not (NaN > 0) 是 True，能正确拦住。
+            #    实测：全 NaN 行情会让整个回放崩在成交这一步（verifier 发现）。
+            if not (px > 0):
                 o.state = OrderState.REJECTED
-                o.reject_reason = "价格无效"
+                o.reject_reason = "价格无效" if px == px else "价格为 NaN（行情数据异常）"
+                self._log("reject", f"买入被拒：{o.reject_reason}", i)
                 return
             # 按手数取整
             raw_qty = self.cash / (px * (1 + self.costs.commission))
-            qty = math.floor(raw_qty / self.lot_size) * self.lot_size
+            qty = _round_to_lot(raw_qty, self.lot_size)
             if qty <= 0:
                 o.state = OrderState.REJECTED
                 o.reject_reason = f"资金不足（需至少 {self.lot_size} 股）"
