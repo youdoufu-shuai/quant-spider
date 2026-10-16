@@ -109,6 +109,11 @@ function runPipeline(args, timeoutMs = 90000) {
 // ------------------------------------------------------------
 const cache = new Map();   // key -> { at, data }
 
+// 选股结果单独一份缓存，TTL 更长。
+// 为什么：选股要拉全市场快照（约 83 页 / 5500 只），实测 7.4 秒。
+// 行情缓存 20 秒的 TTL 对选股太短 —— 连点两次「筛选」不该等两次。
+const screenCache = new Map();   // key -> { at, data }
+
 async function getQuant(params) {
   const market = params.get('market') || 'ashare';
   const symbol = params.get('symbol') || '';
@@ -442,6 +447,82 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(500, { 'Content-Type': TYPES['.json'] });
         res.end(JSON.stringify({ error: String(e.message || e) }));
       }
+      return;
+    }
+
+    // ── 选股 API（三层漏斗）────────────────────────────────
+    //   GET  /api/screen/strategies   列出所有策略（条件与权重）
+    //   POST /api/screen              跑一个策略（L1 过滤 + L2 横截面打分）
+    //   POST /api/screen/ai           再叠加 L3 技术面富化 + AI 排序
+    //
+    // ⚠️ 选股要拉全市场快照，实测 7.4 秒。所以超时给到 180 秒，
+    //    并且结果缓存 60 秒（见 screenCache 的说明）。
+    if (pathname === '/api/screen/strategies' && req.method === 'GET') {
+      try {
+        const out = await runPython(path.join(here, 'screener.py'),
+                                    ['--list', '--json'], 30000);
+        res.writeHead(200, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+        res.end(typeof out === 'string' ? out : JSON.stringify(out));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': TYPES['.json'] });
+        res.end(JSON.stringify({ error: String(e.message || e) }));
+      }
+      return;
+    }
+
+    if ((pathname === '/api/screen' || pathname === '/api/screen/ai')
+        && req.method === 'POST') {
+      const withAi = pathname.endsWith('/ai');
+      let body = '';
+      let over = false;
+      req.on('data', (c) => {
+        body += c;
+        if (body.length > 1e5) { over = true; req.destroy(); }
+      });
+      req.on('end', async () => {
+        if (over) return;
+        let p = {};
+        try { p = JSON.parse(body || '{}'); } catch { p = {}; }
+        // 白名单清洗：strategy 只允许字母数字连字符，避免拼进命令行
+        const strategy = String(p.strategy || 'dual_low').replace(/[^\w-]/g, '');
+        const top = Math.max(5, Math.min(60, Number(p.top) || 30));
+        const pick = Math.max(1, Math.min(20, Number(p.pick) || 8));
+
+        const ck = `${withAi ? 'ai' : 's'}:${strategy}:${top}:${pick}:${p.noAi ? 1 : 0}`;
+        const hit = screenCache.get(ck);
+        if (hit && Date.now() - hit.at < 60000) {
+          res.writeHead(200, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify({ ...hit.data, cached: true }));
+          return;
+        }
+
+        try {
+          const args = withAi
+            ? ['--strategy', strategy, '--top', String(top), '--pick', String(pick), '--json']
+            : ['--strategy', strategy, '--top', String(top), '--json'];
+          if (withAi && p.noAi) args.push('--no-ai');
+          if (withAi && p.context) args.push('--context', String(p.context).slice(0, 400));
+          const out = await runPython(
+            path.join(here, withAi ? 'stock_ai.py' : 'screener.py'), args, 180000);
+          if (out && out.error) {
+            res.writeHead(400, { 'Content-Type': TYPES['.json'] });
+            res.end(JSON.stringify(out));
+            return;
+          }
+          const data = typeof out === 'string' ? JSON.parse(out) : out;
+          screenCache.set(ck, { at: Date.now(), data });
+          // 缓存别无限涨：超过 32 条就清掉最旧的
+          if (screenCache.size > 32) {
+            const oldest = [...screenCache.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+            if (oldest) screenCache.delete(oldest[0]);
+          }
+          res.writeHead(200, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify(data));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': TYPES['.json'] });
+          res.end(JSON.stringify({ error: String(e.message || e) }));
+        }
+      });
       return;
     }
 

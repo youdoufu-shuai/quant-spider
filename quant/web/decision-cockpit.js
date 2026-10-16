@@ -41,7 +41,7 @@
  *   「超买超卖再涨 0.45 档就会开仓」
  * 比一个 -0.4357 有用得多。
  *
- * 配色沿用项目原来的：红=看多、绿=看空（A 股习惯）。
+ * 配色：亮色主题（白底），红=看多、绿=看空（A 股习惯）。
  */
 
 const TAU = Math.PI * 2;
@@ -49,14 +49,16 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const easeOut = t => 1 - Math.pow(1 - t, 3);
 
 const C = {
-  bg: '#080909', panel: '#0e0e11', border: '#24242a',
-  muted: '#8b8b94', text: '#e8e9e9', dim: '#5a5a64',
-  bull: '#ef4b5e',      // 看多（红涨）
-  bear: '#3fbf8f',      // 看空
-  flat: '#5a5a64',
-  accent: '#f23c83',    // 强调 / 阈值线
-  ok: '#48d6a4',
-  warn: '#f4cf4d',
+  // 亮色主题：canvas 底色是白卡片，文字/线条都要在白底上够深
+  bg: '#ffffff', panel: '#ffffff', border: '#e3e6ea',
+  muted: '#6b7280', text: '#1a1d21', dim: '#7b838e',
+  bull: '#d92b3f',      // 看多（红涨）
+  bear: '#12a06a',      // 看空
+  flat: '#9aa1ab',
+  accent: '#d6336c',    // 强调 / 阈值线
+  ok: '#12a06a',
+  warn: '#b8860b',
+  rule: 'rgba(26,29,33,.22)',   // 零线/合计线（白底上用深色半透明）
 };
 
 // 动画阶段（秒）。总长约 2.6s，比上一版的 4s 短 ——
@@ -240,7 +242,7 @@ export class DecisionCockpit {
     const barMax = Math.max(60, g.w - labelW - valW);
     const zero = barX0 + barMax * 0.5;
 
-    c.strokeStyle = 'rgba(120,120,140,0.28)';
+    c.strokeStyle = C.rule;
     c.setLineDash([2, 4]);
     c.beginPath();
     const rowTop = g.rows.length ? g.rows[0].y : g.y + 22;
@@ -278,7 +280,7 @@ export class DecisionCockpit {
 
     // 合计
     const sumY = (g.rows.length ? g.rows[g.rows.length - 1].y + 30 : g.y + 46) + 4;
-    c.strokeStyle = 'rgba(120,120,140,0.28)';
+    c.strokeStyle = C.rule;
     c.beginPath(); c.moveTo(g.x, sumY); c.lineTo(g.x + g.w, sumY); c.stroke();
     this._text(c, '加权和 ÷ 总权重 =', g.x, sumY + 16, C.muted, 10.5);
     this._text(c, `${p.rawSum >= 0 ? '+' : ''}${p.rawSum.toFixed(3)} ÷ ${p.totalWeight.toFixed(2)}`,

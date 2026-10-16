@@ -6,9 +6,10 @@
 <title>模拟盘 · Paper Trading</title>
 <style>
   :root{
-    --bg:#080909;--panel:#0e0e11;--panel2:#131317;--border:#24242a;
-    --text:#e8e8e9;--muted:#8b8b94;--accent:#f23c83;
-    --up:#ef4b5e;--down:#3fbf8f;--warn:#f4cf4d;--ok:#48d6a4;
+    /* 亮色主题：白底 + 浅灰分隔 + 深色文字 */
+    --bg:#f5f6f8;--panel:#ffffff;--panel2:#fafbfc;--border:#e3e6ea;
+    --text:#1a1d21;--muted:#6b7280;--accent:#d6336c;
+    --up:#d92b3f;--down:#12a06a;--warn:#b8860b;--ok:#12a06a;
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--text);
@@ -18,8 +19,10 @@
     border-bottom:1px solid var(--border);background:var(--panel);flex-wrap:wrap}
   #top h1{margin:0;font-size:13px;letter-spacing:.16em;font-weight:400}
   .sub{color:var(--accent);font-size:10px;letter-spacing:.12em}
-  select,input,button{background:#191a1e;color:var(--text);border:1px solid var(--border);
+  select,input,button{background:#fff;color:var(--text);border:1px solid var(--border);
     padding:5px 8px;font:inherit;font-size:11px;border-radius:3px}
+  input::placeholder,textarea::placeholder{color:var(--muted)}
+  select:focus,input:focus,textarea:focus,button:focus{outline:none;border-color:var(--accent)}
   input[type=number]{width:110px}
   button{cursor:pointer}
   button:hover:not(:disabled){border-color:var(--accent)}
@@ -27,7 +30,7 @@
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
   button.buy{background:var(--up);border-color:var(--up);color:#fff;font-weight:700}
   button.sell{background:var(--down);border-color:var(--down);color:#fff;font-weight:700}
-  button.on{background:var(--ok);border-color:var(--ok);color:#04221a}
+  button.on{background:var(--ok);border-color:var(--ok);color:#fff}
   .spacer{flex:1}
   .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:10px;
     border:1px solid var(--border);font-size:10px;color:var(--muted)}
@@ -37,13 +40,14 @@
   #wrap{padding:13px 16px 50px;display:grid;gap:13px;grid-template-columns:370px 1fr}
   @media (max-width:1150px){#wrap{grid-template-columns:1fr}}
   .col{display:grid;gap:13px;align-content:start}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.05)}
   .card>h2{margin:0;padding:8px 12px;font-size:11px;font-weight:400;color:var(--muted);
     letter-spacing:.08em;border-bottom:1px solid var(--border);display:flex;
     justify-content:space-between;align-items:center;gap:8px}
   .card .body{padding:11px 12px}
   table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #17171c;white-space:nowrap}
+  th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #eef0f3;white-space:nowrap}
   th{color:var(--muted);font-weight:400;font-size:10px}
   th:first-child,td:first-child{text-align:left}
   .mut{color:var(--muted)} .up{color:var(--up)} .dn{color:var(--down)} .wn{color:var(--warn)} .ok{color:var(--ok)}
@@ -56,9 +60,9 @@
   label.f{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--muted)}
   canvas{display:block;width:100%}
   .sess{display:flex;justify-content:space-between;align-items:center;gap:8px;
-    padding:7px 9px;border-bottom:1px solid #17171c;cursor:pointer}
-  .sess:hover{background:#141419}
-  .sess.cur{background:#17171c;border-left:2px solid var(--accent)}
+    padding:7px 9px;border-bottom:1px solid #eef0f3;cursor:pointer}
+  .sess:hover{background:#f7f9fb}
+  .sess.cur{background:#eef2f7;border-left:2px solid var(--accent)}
   .sess .nm{font-size:11px}
   .sess .meta{color:var(--muted);font-size:10px}
   .tabs{display:flex;gap:0;border-bottom:1px solid var(--border)}
@@ -67,12 +71,13 @@
   .tabs button.act{color:var(--text);border-bottom-color:var(--accent)}
   .scroll{max-height:280px;overflow:auto}
   .note{color:var(--muted);font-size:10px;line-height:1.75;padding:8px 10px;
-    background:#0b0b0e;border-left:2px solid var(--warn);margin-top:9px}
+    background:#fafbfc;border-left:2px solid var(--warn);margin-top:9px}
   .note b{color:var(--warn)}
   #err{display:none;margin:0 16px;padding:9px 12px;border:1px solid var(--up);
-    border-radius:4px;color:var(--up);background:#1a0d13;font-size:11px;white-space:pre-wrap}
-  .toast{position:fixed;right:16px;bottom:16px;background:var(--panel2);
+    border-radius:4px;color:#b02535;background:#fdf2f3;font-size:11px;white-space:pre-wrap}
+  .toast{position:fixed;right:16px;bottom:16px;background:#fff;
     border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:4px;
+    box-shadow:0 6px 20px rgba(16,24,40,.14);
     padding:10px 14px;font-size:11px;max-width:460px;z-index:99;display:none}
   #empty{color:var(--muted);padding:26px 8px;text-align:center;line-height:2}
 
@@ -81,8 +86,8 @@
   .results{max-height:190px;overflow:auto;margin-top:8px;display:none}
   .results.on{display:block}
   .results .it{display:flex;justify-content:space-between;gap:8px;padding:5px 8px;
-    border:1px solid transparent;border-bottom:1px solid #17171c;cursor:pointer;font-size:11px}
-  .results .it:hover{background:#17171c;border-color:var(--border)}
+    border:1px solid transparent;border-bottom:1px solid #eef0f3;cursor:pointer;font-size:11px}
+  .results .it:hover{background:#f2f5f8;border-color:var(--border)}
   .results .it b{font-weight:400}
   .results .it .px{color:var(--muted);font-size:10px;white-space:nowrap}
   .results .it .px i{font-style:normal}
@@ -90,7 +95,7 @@
   .chip{padding:3px 8px;border:1px solid var(--border);border-radius:10px;
     font-size:10px;color:var(--muted);cursor:pointer}
   .chip:hover{border-color:var(--accent);color:var(--text)}
-  .chip.cur{border-color:var(--accent);color:var(--text);background:#1a0d13}
+  .chip.cur{border-color:var(--accent);color:var(--text);background:#fdf2f6}
   .selinfo{margin-top:7px;font-size:10px;color:var(--muted)}
   .selinfo b{color:var(--text);font-weight:400}
 </style>
@@ -105,7 +110,8 @@
   <a href="/">量化看板</a>
   <a href="/pro.html">专业图表</a>
   <a href="/decision.html">决策驾驶舱</a>
-  <a href="/spider-viewer.html" target="_blank">美术查看器</a>
+  <a href="/screen.html">选股</a>
+  <a href="http://127.0.0.1:4317/" target="_blank" title="上游 Prompt Spider 的美术查看器（蜘蛛动画）">美术查看器 ↗</a>
 </div>
 <div id="err"></div>
 
@@ -390,7 +396,7 @@
             <button id="aiPromptReset" style="padding:0 6px;font-size:10px">恢复默认</button>
           </span>
           <textarea id="aiPrompt" rows="4"
-            style="width:100%;background:#191a1e;color:var(--text);
+            style="width:100%;background:#fff;color:var(--text);
                    border:1px solid var(--border);border-radius:3px;
                    padding:6px;font:11px/1.6 Consolas,monospace;resize:vertical"
             placeholder="留空使用内置提示词"></textarea>
@@ -666,7 +672,7 @@ function aiResult(kind, html) {
   const cls = kind === 'ok' ? 'ok' : kind === 'err' ? 'dn' : kind === 'warn' ? 'wn' : 'mut';
   $('aiResult').innerHTML =
     `<div class="${cls}" style="font-size:11px;line-height:1.8;
-       border-left:2px solid currentColor;padding:6px 9px;background:#0b0b0e">${html}</div>`;
+       border-left:2px solid currentColor;padding:6px 9px;background:#fafbfc">${html}</div>`;
 }
 
 async function saveAI() {
@@ -1079,7 +1085,7 @@ function renderDecision(dec, at) {
       const w = Math.abs(v) * 50;
       html += `<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:11px">
         <span style="min-width:62px" class="mut">${FL[k] || esc(k)}</span>
-        <span style="flex:1;height:7px;background:#17171c;border-radius:3px;position:relative;overflow:hidden">
+        <span style="flex:1;height:7px;background:#eceff3;border-radius:3px;position:relative;overflow:hidden">
           <span style="position:absolute;left:50%;top:0;bottom:0;width:${w}%;
             background:${v >= 0 ? 'var(--down)' : 'var(--up)'};
             ${v >= 0 ? 'margin-left:0' : 'margin-left:' + (-w) + '%'}"></span>
@@ -1227,7 +1233,7 @@ function renderDetail() {
     const col = { fill: 'var(--ok)', order: 'var(--muted)', reject: 'var(--up)',
                   cancel: 'var(--muted)', reset: 'var(--warn)', auto: 'var(--warn)' };
     const zh = { fill:'成交', order:'委托', reject:'拒绝', cancel:'撤单', reset:'重置', auto:'自动' };
-    html = rows.length ? rows.map(l => `<div style="display:flex;gap:9px;padding:3px 0;border-bottom:1px solid #17171c">
+    html = rows.length ? rows.map(l => `<div style="display:flex;gap:9px;padding:3px 0;border-bottom:1px solid #eef0f3">
         <span class="mut" style="min-width:130px">${esc(l.at)}</span>
         <span style="min-width:38px;color:${col[l.kind] || 'inherit'}">${zh[l.kind] || l.kind}</span>
         <span>${esc(l.text)}</span></div>`).join('')
@@ -1254,7 +1260,7 @@ function drawChart(c) {
 
   const eq = c.equityCurve || [], px = c.prices || [];
   if (!eq.length) {
-    ctx.fillStyle = '#8b8b94'; ctx.font = '11px Consolas, monospace';
+    ctx.fillStyle = '#6b7280'; ctx.font = '11px Consolas, monospace';
     ctx.fillText('暂无数据（刷新行情后生成）', 10, h / 2);
     return;
   }
@@ -1271,12 +1277,12 @@ function drawChart(c) {
   if (pHi === pLo) { pHi += 1; pLo -= 1; }
 
   ctx.font = '10px Consolas, monospace';
-  ctx.strokeStyle = '#1b1b20'; ctx.lineWidth = 1;
+  ctx.strokeStyle = '#eceff3'; ctx.lineWidth = 1;
   for (let g = 0; g <= 3; g++) {
     const y = pad.t + ph * g / 3;
     ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + pw, y); ctx.stroke();
     const v = eHi - (eHi - eLo) * g / 3;
-    ctx.fillStyle = '#8b8b94';
+    ctx.fillStyle = '#6b7280';
     ctx.fillText(v.toLocaleString('zh-CN', { maximumFractionDigits: 0 }), pad.l + pw + 5, y + 3);
   }
   const X = i => pad.l + i / Math.max(1, eq.length - 1) * pw;
@@ -1284,7 +1290,7 @@ function drawChart(c) {
 
   // 初始资金基准线
   ctx.setLineDash([3, 4]);
-  ctx.strokeStyle = '#33333c';
+  ctx.strokeStyle = '#c7ccd4';
   const yb = YE(c.initial);
   ctx.beginPath(); ctx.moveTo(pad.l, yb); ctx.lineTo(pad.l + pw, yb); ctx.stroke();
   ctx.setLineDash([]);
@@ -1299,13 +1305,13 @@ function drawChart(c) {
       const y = pad.t + (1 - v) * ph;
       i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
     }
-    ctx.strokeStyle = '#3a3a44'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.strokeStyle = '#c7ccd4'; ctx.lineWidth = 1; ctx.stroke();
   }
 
   // 权益
   ctx.beginPath();
   eq.forEach((p, i) => { const x = X(i), y = YE(p.equity); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
-  ctx.strokeStyle = '#48d6a4'; ctx.lineWidth = 1.7; ctx.stroke();
+  ctx.strokeStyle = '#0e9f6e'; ctx.lineWidth = 1.7; ctx.stroke();
 
   // 成交标记
   for (const f of (c.recentFills || [])) {
@@ -1313,7 +1319,7 @@ function drawChart(c) {
     if (idx < 0) continue;
     const x = X(idx), y = YE(eq[idx].equity);
     const up = f.side === 'buy';
-    ctx.fillStyle = up ? '#ef4b5e' : '#3fbf8f';
+    ctx.fillStyle = up ? '#d92b3f' : '#12a06a';
     ctx.beginPath();
     if (up) { ctx.moveTo(x, y - 7); ctx.lineTo(x - 3.5, y - 1); ctx.lineTo(x + 3.5, y - 1); }
     else { ctx.moveTo(x, y + 7); ctx.lineTo(x - 3.5, y + 1); ctx.lineTo(x + 3.5, y + 1); }

@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>选股 · Stock Screener</title>
+<style>
+  :root{
+    /* 亮色主题，与量化看板保持一致 */
+    --bg:#f5f6f8; --panel:#ffffff; --panel2:#fafbfc; --border:#e3e6ea;
+    --text:#1a1d21; --muted:#6b7280; --dim:#9aa1ab; --accent:#d6336c;
+    --up:#d92b3f; --down:#12a06a; --warn:#b8860b; --ok:#0e8f68;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--text);
+    font:12px/1.6 Consolas,"Cascadia Code",ui-monospace,monospace}
+  a{color:var(--accent);text-decoration:none}
+
+  #top{display:flex;align-items:center;gap:14px;padding:12px 18px;
+    border-bottom:1px solid var(--border);background:var(--panel);
+    flex-wrap:wrap;position:sticky;top:0;z-index:30}
+  #top h1{margin:0;font-size:13px;letter-spacing:.16em;font-weight:400}
+  #top .sub{color:var(--accent);font-size:10px;letter-spacing:.12em}
+  .spacer{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:10px;
+    border:1px solid var(--border);font-size:10px;color:var(--muted);background:var(--panel2)}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
+
+  select,input,button{background:#fff;color:var(--text);border:1px solid var(--border);
+    padding:5px 9px;font:inherit;font-size:11px;border-radius:3px}
+  input::placeholder{color:var(--muted)}
+  select:focus,input:focus,button:focus{outline:none;border-color:var(--accent)}
+  button{cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button:disabled{opacity:.5;cursor:not-allowed}
+
+  #wrap{padding:14px 18px 50px;display:grid;gap:12px;max-width:2200px;margin:0 auto}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:5px;
+    min-width:0;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .card>h2{margin:0;padding:9px 14px;font-size:10.5px;font-weight:400;color:var(--muted);
+    letter-spacing:.08em;border-bottom:1px solid var(--border);
+    display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+  .card .body{padding:12px 14px}
+
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+  label.f{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--muted)}
+
+  /* 策略卡片 */
+  .strategies{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+  .st{border:1px solid var(--border);border-radius:4px;padding:11px 13px;cursor:pointer;
+    background:var(--panel2);transition:border-color .12s,background .12s}
+  .st:hover{border-color:var(--accent)}
+  .st.cur{border-color:var(--accent);background:#fdf2f6}
+  .st b{display:block;font-size:13px;font-weight:700;margin-bottom:3px}
+  .st .d{color:var(--muted);font-size:10.5px;line-height:1.5;margin-bottom:7px}
+  .st .c{color:var(--dim);font-size:9.5px;line-height:1.6}
+
+  /* 漏斗 */
+  .funnel{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+  .fn{flex:1;min-width:120px;padding:12px 14px;border-right:1px solid var(--border)}
+  .fn:last-child{border-right:none}
+  .fn .n{font-size:23px;font-weight:700;line-height:1.15}
+  .fn .l{color:var(--muted);font-size:10px;margin-top:2px}
+  .fn .s{color:var(--dim);font-size:9.5px;margin-top:4px}
+  .rej{padding:10px 14px;border-top:1px solid var(--border);background:var(--panel2);
+    color:var(--muted);font-size:10.5px;line-height:1.9}
+  .rej i{font-style:normal;color:var(--text);font-weight:700}
+
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th,td{text-align:right;padding:6px 9px;border-bottom:1px solid #eef1f4;white-space:nowrap}
+  th{color:var(--muted);font-weight:400;font-size:10px;background:var(--panel2);
+    position:sticky;top:0}
+  th:first-child,td:first-child{text-align:left}
+  tbody tr:hover{background:#fafbfc}
+  td.num{font-variant-numeric:tabular-nums}
+  .tablewrap{overflow:auto;max-height:640px}
+  .up{color:var(--up)}.dn{color:var(--down)}.wn{color:var(--warn)}.ok{color:var(--ok)}
+  .mut{color:var(--muted)}.dim{color:var(--dim)}
+  .bar{display:inline-block;height:6px;border-radius:3px;vertical-align:middle}
+  .tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9.5px;
+    background:var(--panel2);border:1px solid var(--border);color:var(--muted)}
+
+  /* AI 结果 */
+  .picks{display:grid;gap:10px;padding:12px 14px}
+  .pick{border:1px solid var(--border);border-radius:4px;padding:12px 14px;background:var(--panel2)}
+  .pick .hd{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:7px}
+  .pick .rk{font-size:18px;font-weight:700;color:var(--accent);min-width:22px}
+  .pick .nm{font-size:14px;font-weight:700}
+  .pick .cd{color:var(--muted);font-size:11px}
+  .pick .cf{margin-left:auto;font-size:11px}
+  .pick .th{font-size:12px;line-height:1.7;margin-bottom:7px}
+  .pick .meta{display:grid;grid-template-columns:76px 1fr;gap:3px 10px;
+    font-size:10.5px;line-height:1.7}
+  .pick .meta .k{color:var(--muted)}
+  .pick .meta .v{color:var(--text)}
+
+  .note{padding:11px 14px;border-radius:4px;font-size:11px;line-height:1.85;
+    background:#fdf2f6;border-left:3px solid var(--accent);color:var(--muted)}
+  .note b{color:var(--text)}
+  .note.warn{background:#fdf8ec;border-left-color:var(--warn)}
+  .note.ok{background:#eefaf4;border-left-color:var(--ok)}
+
+  #err{display:none;margin:0 18px 12px;padding:10px 14px;border:1px solid var(--up);
+    border-radius:4px;color:var(--up);background:#fdf2f4;white-space:pre-wrap}
+  #busy{display:none;padding:14px 18px;color:var(--muted);font-size:11.5px}
+  #busy.on{display:block}
+  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--border);
+    border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
+    vertical-align:-1px;margin-right:7px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  @media (max-width:900px){
+    #wrap{padding:10px 11px 40px}
+    .fn{min-width:90px;padding:9px 11px}
+    .fn .n{font-size:18px}
+  }
+</style>
+</head>
+<body>
+
+<div id="top">
+  <h1>STOCK SCREENER</h1>
+  <div class="sub">A 股选股</div>
+  <span class="pill"><span class="dot" id="dot"></span><span id="status">就绪</span></span>
+  <span class="spacer"></span>
+  <a href="/">看板</a>
+  <a href="/pro.html">专业图表</a>
+  <a href="/decision.html">决策驾驶舱</a>
+  <a href="/paper.html">模拟盘</a>
+</div>
+<div id="err"></div>
+
+<div id="wrap">
+
+  <!-- 选策略 -->
+  <div class="card">
+    <h2><span>选一个策略</span><span class="mut" id="stratMeta">—</span></h2>
+    <div class="body">
+      <div class="strategies" id="stratBox"><span class="mut">加载中…</span></div>
+      <div class="row" style="margin-top:12px;align-items:flex-end">
+        <label class="f">取前 N 只做深度分析
+          <select id="topN">
+            <option>15</option><option selected>30</option>
+            <option>40</option><option>60</option>
+          </select>
+        </label>
+        <label class="f">AI 最终选几只
+          <select id="pickN">
+            <option>5</option><option selected>8</option>
+            <option>10</option><option>15</option>
+          </select>
+        </label>
+        <button id="runBtn" class="primary">开始选股</button>
+        <button id="runNoAi">只用本地规则</button>
+        <label class="f" style="flex-direction:row;align-items:center;gap:6px">
+          <input id="deep" type="checkbox" style="width:auto" checked>
+          <span>启用技术面深度分析（拉历史 K 线）</span>
+        </label>
+      </div>
+      <div id="busy"><span class="spin"></span><span id="busyText">—</span></div>
+    </div>
+  </div>
+
+  <!-- 漏斗 -->
+  <div class="card" id="funnelCard" style="display:none">
+    <h2><span>筛选漏斗</span><span class="mut" id="funnelMeta">—</span></h2>
+    <div class="funnel" id="funnel"></div>
+    <div class="rej" id="rejected"></div>
+  </div>
+
+  <!-- AI 结果 -->
+  <div class="card" id="aiCard" style="display:none">
+    <h2><span id="aiTitle">AI 选股结果</span><span class="mut" id="aiMeta">—</span></h2>
+    <div id="aiNote"></div>
+    <div class="picks" id="picks"></div>
+    <div id="portfolioRisks"></div>
+    <div id="aiProblems"></div>
+  </div>
+
+  <!-- 候选明细 -->
+  <div class="card" id="tableCard" style="display:none">
+    <h2><span id="tableTitle">候选明细</span><span class="mut" id="tableMeta">—</span></h2>
+    <div class="tablewrap"><table id="tbl">
+      <thead><tr>
+        <th>#</th><th>代码</th><th>名称</th><th>行业</th>
+        <th>现价</th><th>当日</th><th>近20日</th>
+        <th>PE</th><th>PB</th><th>市值亿</th><th>成交额亿</th><th>换手%</th>
+        <th>年内位置</th><th>RSI</th><th>ADX</th><th>20日线</th><th>得分</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+
+  <!-- 行业分布 -->
+  <div class="card" id="sectorCard" style="display:none">
+    <h2>入选名单的行业分布</h2>
+    <div class="body" id="sectors"></div>
+  </div>
+
+  <!-- 说明 -->
+  <div class="card">
+    <h2>这套选股是怎么工作的</h2>
+    <div class="body">
+      <div class="note ok">
+        <b>三层漏斗 —— 全市场阶段必须轻量，深度分析只对少数候选</b><br><br>
+
+        <b>L1 全市场快照 + 硬性条件</b><br>
+        用新浪行情中心接口拉全市场（5500+ 只，约 3 秒），带 PE / PB / 市值 /
+        成交额 / 换手率。然后按策略的硬性条件过滤 —— 剔除 ST、停牌、低流动性、
+        追高。这一步把 5500 只砍到几百只。<br>
+        <span class="mut">为什么硬性条件全用基本面字段：它们客观、可审计，
+        不像技术指标那样对参数敏感，适合当「一票否决」。</span><br><br>
+
+        <b>L2 横截面因子打分</b><br>
+        把过滤后的候选<b>放在一起排名</b>（不是单只打分）。每个因子算秩百分比
+        （不是 min-max，避免被 PE=1500 这类极端值压扁），再加权求和。
+        <br><span class="mut">PE 缺失（亏损股）得中性 50 分，不被剔除 ——
+        亏损只说明没有 PE，不代表这只股票差。</span><br><br>
+
+        <b>L3 技术面富化 + AI 排序</b><br>
+        只对前 N 只（默认 30）拉历史 K 线算 27 指标。这一步每只约 170ms，
+        对 30 只约 1 秒；对全市场要 15 分钟 —— 这就是漏斗存在的理由。<br>
+        然后交给 AI 做横向比较：给逻辑、风险、该盯什么、什么情况算判断错了。
+        <b>AI 不能推荐候选池以外的股票</b>（有校验，编造的会被丢弃并记入问题列表）。
+      </div>
+
+      <div class="note warn" style="margin-top:11px">
+        <b>关于行业分散</b><br>
+        实测「双低价值」不加限制时，前 15 只里有 <b>10 只是银行</b> ——
+        银行天然 PE 4~7、PB 0.3~0.8，在这类条件下载必然霸榜。
+        但买 10 只银行和买 1 只银行的风险几乎一样，等于没分散。<br>
+        所以同名行业最多取 2 只（超出按级扣分，排到后面而不是硬性丢弃）。
+        <br><span class="mut">行业判定用名称关键词（可审计、零依赖），
+        不是真实行业分类 —— 命中不了的归入「其它」，各自独立成桶。</span>
+      </div>
+
+      <div class="note" style="margin-top:11px">
+        <b>关于收益</b><br>
+        这个页面**不预测收益**，只做筛选和解释。要验证实际效果，两条路：<br>
+        · <b>模拟盘</b>：把选出的股票下到模拟盘，按日调仓，跑一段时间看真实表现<br>
+        · <b>历史回放</b>：需要历史快照。现在的接口只能拿<b>当前</b>的 PE/PB，
+        所以价值类策略没法立刻回测过去 —— 得从今天开始每天存一份快照攒数据。
+        <br><span class="mut">技术面策略（动量/突破）可以用价格序列回放，
+        因为价格有历史。</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+let STRATEGIES = [];
+let CUR = null;
+let LAST = null;
+
+const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v))
+  ? '—' : Number(v).toFixed(d);
+const pctTxt = (v, d = 2) => (v === null || v === undefined) ? '—'
+  : (v >= 0 ? '+' : '') + Number(v).toFixed(d) + '%';
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const clsOf = v => v > 0 ? 'up' : v < 0 ? 'dn' : 'mut';
+
+function fail(m) {
+  const e = $('err'); e.style.display = 'block'; e.textContent = m;
+  $('status').textContent = '出错'; $('dot').style.background = 'var(--up)';
+}
+const clearErr = () => { $('err').style.display = 'none'; };
+const busy = (on, text) => {
+  $('busy').classList.toggle('on', on);
+  if (text) $('busyText').textContent = text;
+};
+
+async function api(path, opts) {
+  const r = await fetch(path, opts);
+  const d = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+  if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+}
+
+addEventListener('error', e => {
+  if (/ResizeObserver loop/i.test(e.message || '')) return;
+  fail('脚本出错：' + e.message);
+});
+
+// ── 初始化 ──
+async function boot() {
+  try {
+    STRATEGIES = await api('/api/screen/strategies');
+  } catch (e) { return fail('无法读取策略列表：' + e.message); }
+  if (!Array.isArray(STRATEGIES) || !STRATEGIES.length) {
+    return fail('策略列表为空（检查 quant/screener.py 是否正常）');
+  }
+  // ⚠️ CUR 必须在 renderStrategies 之前赋值，
+  //    否则第一屏没有任何卡片是高亮的（实测踩过）。
+  CUR = STRATEGIES[0].key;
+  renderStrategies();
+  $('runBtn').onclick = () => run(false);
+  $('runNoAi').onclick = () => run(true);
+  $('status').textContent = '就绪 · ' + STRATEGIES.length + ' 个策略';
+}
+
+function renderStrategies() {
+  $('stratBox').innerHTML = STRATEGIES.map(s => `
+    <div class="st ${s.key === CUR ? 'cur' : ''}" data-k="${esc(s.key)}">
+      <b>${esc(s.label)}</b>
+      <div class="d">${esc(s.desc)}</div>
+      <div class="c">条件：${s.filters.map(esc).join('、')}</div>
+    </div>`).join('');
+  $('stratBox').querySelectorAll('.st').forEach(el => {
+    el.onclick = () => { CUR = el.dataset.k; renderStrategies(); };
+  });
+  const s = STRATEGIES.find(x => x.key === CUR);
+  if (s) {
+    const ws = Object.entries(s.weights).filter(([, v]) => v > 0)
+      .map(([k, v]) => `${k} ${v.toFixed(2)}`).join('  ');
+    $('stratMeta').textContent = `权重：${ws}`;
+  }
+}
+
+// ── 跑选股 ──
+async function run(noAi) {
+  if (!CUR) return;
+  clearErr();
+  const deep = $('deep').checked && !noAi;
+  const top = Number($('topN').value);
+  const pick = Number($('pickN').value);
+
+  $('runBtn').disabled = $('runNoAi').disabled = true;
+  busy(true, deep
+    ? `拉全市场快照 → 硬性过滤 → 横截面打分 → 对前 ${top} 只拉历史算指标 → AI 排序…（约 10~40 秒）`
+    : `拉全市场快照 → 硬性过滤 → 横截面打分…（约 3 秒）`);
+  $('status').textContent = '选股中…'; $('dot').style.background = 'var(--warn)';
+
+  const t0 = Date.now();
+  try {
+    const useAi = deep;
+    const d = await api(useAi ? '/api/screen/ai' : '/api/screen', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        strategy: CUR, top, pick,
+        noAi: noAi || false,
+      }),
+    });
+    LAST = d;
+    renderFunnel(d);
+    if (useAi) renderAi(d, noAi);
+    else renderLocalHint(d);
+    renderTable(d);
+    renderSectors(d);
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    $('status').textContent = `完成 · ${secs}s${d.cached ? '（缓存）' : ''}`;
+    $('dot').style.background = 'var(--ok)';
+  } catch (e) {
+    fail('选股失败：' + e.message);
+  } finally {
+    busy(false);
+    $('runBtn').disabled = $('runNoAi').disabled = false;
+  }
+}
+
+// ── 漏斗 ──
+function renderFunnel(d) {
+  const f = d.funnel || {};
+  $('funnelCard').style.display = 'block';
+  const rejTotal = Object.values(f.rejected || {}).reduce((a, b) => a + b, 0);
+  $('funnelMeta').textContent =
+    `${d.label || d.strategy} · 总耗时 ${d.timing?.totalMs ?? '—'}ms`
+    + (d.timing ? `（拉取 ${d.timing.fetchMs}ms / 过滤 ${d.timing.filterMs}ms / 打分 ${d.timing.scoreMs}ms）` : '');
+  $('funnel').innerHTML = `
+    <div class="fn"><div class="n">${f.market ?? '—'}</div>
+      <div class="l">全市场 A 股</div><div class="s">快照拉取</div></div>
+    <div class="fn"><div class="n" style="color:var(--warn)">${f.afterFilter ?? '—'}</div>
+      <div class="l">通过硬性条件</div><div class="s">剔除 ${rejTotal} 只</div></div>
+    <div class="fn"><div class="n" style="color:var(--accent)">${f.top ?? '—'}</div>
+      <div class="l">进入深度分析</div><div class="s">横截面打分排序</div></div>`;
+  const rej = Object.entries(f.rejected || {}).sort((a, b) => b[1] - a[1]);
+  $('rejected').innerHTML = rej.length
+    ? '被拒原因：' + rej.map(([k, v]) => `${esc(k)} <i>${v}</i>`).join(' · ')
+    : '没有被拒的（条件很宽松）';
+}
+
+// ── AI 结果 ──
+function renderAi(d, noAi) {
+  $('aiCard').style.display = 'block';
+  const isAi = d.mode === 'ai';
+  $('aiTitle').textContent = isAi ? 'AI 选股结果' : '本地规则打分';
+  $('aiMeta').textContent = isAi
+    ? `${d.provider} / ${d.model} · ${d.elapsedMs}ms · ${d.tokens?.total_tokens ?? '?'} tokens`
+    : `候选 ${d.nCandidates ?? '—'} 只`;
+
+  $('aiNote').innerHTML = d.note
+    ? `<div class="note warn" style="margin:0 14px 0">${esc(d.note)}</div>` : '';
+
+  const picks = d.picks || [];
+  if (picks.length) {
+    $('picks').innerHTML = picks.map(p => `
+      <div class="pick">
+        <div class="hd">
+          <span class="rk">${p.rank}</span>
+          <span class="nm">${esc(p.name)}</span>
+          <span class="cd">${esc(p.symbol)}</span>
+          ${p.sector ? `<span class="tag">${esc(p.sector)}</span>` : ''}
+          <span class="cf">把握 <b>${(p.confidence * 100).toFixed(0)}%</b></span>
+        </div>
+        <div class="th">${esc(p.thesis)}</div>
+        <div class="meta">
+          <span class="k">现价</span><span class="v">${fmt(p.price)}
+            <span class="${clsOf(p.change_pct)}">${pctTxt(p.change_pct)}</span></span>
+          <span class="k">估值</span><span class="v">PE ${fmt(p.pe)} · PB ${fmt(p.pb)}</span>
+          <span class="k">20日</span><span class="v">${pctTxt(p.chg20)}
+            · 年内位置 ${fmt(p.rangePos, 0)}%</span>
+          ${p.risks?.length ? `<span class="k">风险</span>
+            <span class="v wn">${p.risks.map(esc).join('；')}</span>` : ''}
+          ${p.watch ? `<span class="k">盯什么</span><span class="v">${esc(p.watch)}</span>` : ''}
+          ${p.invalidators ? `<span class="k">放弃条件</span>
+            <span class="v mut">${esc(p.invalidators)}</span>` : ''}
+        </div>
+      </div>`).join('');
+  } else if (isAi) {
+    $('picks').innerHTML = `<div class="note warn" style="margin:0">
+      AI 没有选出任何股票。这可能是<b>正确的结果</b> —— 候选质量差时少选是对的。
+      ${d.marketView ? `<br>整体看法：${esc(d.marketView)}` : ''}</div>`;
+  } else {
+    // 本地模式：显示排序表
+    const rs = (d.results || []).slice(0, 20);
+    $('picks').innerHTML = `<div class="tablewrap"><table>
+      <thead><tr><th>#</th><th>代码</th><th>名称</th><th>行业</th>
+        <th>L2 分</th><th>技术分</th><th>综合</th><th>技术面理由</th></tr></thead>
+      <tbody>${rs.map((e, i) => `<tr>
+        <td>${i + 1}</td><td>${esc(e.symbol)}</td><td>${esc(e.name)}</td>
+        <td><span class="tag">${esc(e.sector || '—')}</span></td>
+        <td class="num">${fmt(e.l2Score, 1)}</td>
+        <td class="num ${clsOf(e.techScore)}">${fmt(e.techScore, 1)}</td>
+        <td class="num"><b>${fmt(e.finalScore, 1)}</b></td>
+        <td class="mut" style="text-align:left">${(e.techWhy || []).map(esc).join('、')}</td>
+      </tr>`).join('')}</tbody></table></div>`;
+  }
+
+  const pr = d.portfolioRisks || d.portfolio_risks || [];
+  $('portfolioRisks').innerHTML = pr.length
+    ? `<div class="note warn" style="margin:0 14px 12px">
+        <b>组合风险</b>（AI 指出的共同风险）<br>
+        ${pr.map(r => '· ' + esc(r)).join('<br>')}</div>` : '';
+
+  const pb = d.problems || [];
+  $('aiProblems').innerHTML = pb.length
+    ? `<div class="note" style="margin:0 14px 12px">
+        <b>输出校验</b>（这些被自动拦下了）<br>
+        ${pb.map(r => '· ' + esc(r)).join('<br>')}</div>` : '';
+}
+
+function renderLocalHint(d) {
+  $('aiCard').style.display = 'none';
+}
+
+// ── 候选明细表 ──
+//
+// ⚠️ 两个端点的结果字段不一样，这里必须分开取：
+//    /api/screen      → results[].score        （L2 横截面分）
+//    /api/screen/ai   → results[].l2Score      （L2 分）
+//                       picks[].l2Score        （AI 选中的，也带 L2 分）
+//                       picks[].confidence     （AI 把握度）
+//    没有 tech 字段说明没做深度分析，技术列要显示「—」而不是 0。
+function renderTable(d) {
+  const isPick = !!(d.picks && d.picks.length);
+  const rows = isPick ? d.picks : (d.results || []);
+  if (!rows.length) { $('tableCard').style.display = 'none'; return; }
+  $('tableCard').style.display = 'block';
+  $('tableTitle').textContent = isPick ? 'AI 选中标的明细' : '候选明细（L2 排序）';
+  $('tableMeta').textContent = `${rows.length} 只`;
+
+  const hasTech = rows.some(x => x.tech);
+  const scoreOf = x => {
+    // 优先 L2 分（两个端点都有这个语义），退回 score，最后 finalScore
+    if (x.l2Score !== undefined && x.l2Score !== null) return x.l2Score;
+    if (x.score !== undefined && x.score !== null) return x.score;
+    return x.finalScore;
+  };
+
+  $('tbl').querySelector('tbody').innerHTML = rows.map((x, i) => {
+    const t = x.tech || {};
+    const has = k => t[k] !== undefined && t[k] !== null;
+    return `<tr>
+      <td class="mut">${i + 1}</td>
+      <td>${esc(x.symbol)}</td>
+      <td><b>${esc(x.name)}</b></td>
+      <td><span class="tag">${esc(x.sector || '—')}</span></td>
+      <td class="num">${fmt(x.price)}</td>
+      <td class="num ${clsOf(x.change_pct)}">${pctTxt(x.change_pct)}</td>
+      <td class="num ${clsOf(x.chg20)}">${has('rsi') || x.chg20 !== undefined ? pctTxt(x.chg20) : '—'}</td>
+      <td class="num">${fmt(x.pe)}</td>
+      <td class="num">${fmt(x.pb)}</td>
+      <td class="num">${fmt(x.mktcapYi, 1)}</td>
+      <td class="num">${fmt(x.amountYi)}</td>
+      <td class="num">${fmt(x.turnover)}</td>
+      <td class="num">${x.rangePos === undefined ? '—' : fmt(x.rangePos, 0) + '%'}</td>
+      <td class="num">${has('rsi') ? fmt(t.rsi, 1) : '—'}</td>
+      <td class="num">${has('adx') ? fmt(t.adx, 1) : '—'}</td>
+      <td>${t.aboveMa20 === undefined ? '<span class="dim">—</span>'
+        : `<span class="${t.aboveMa20 ? 'up' : 'dn'}">${t.aboveMa20 ? '站上' : '跌破'}</span>`}</td>
+      <td class="num"><b>${fmt(scoreOf(x), 1)}</b></td>
+      ${isPick ? `<td class="num">${(x.confidence * 100).toFixed(0)}%</td>` : ''}
+    </tr>`;
+  }).join('');
+
+  // AI 选中时多一列把握度
+  const head = $('tbl').querySelector('thead tr');
+  const last = head.lastElementChild;
+  if (isPick && last.textContent !== '把握') {
+    const th = document.createElement('th');
+    th.textContent = '把握';
+    head.appendChild(th);
+  } else if (!isPick && last.textContent === '把握') {
+    last.remove();
+  }
+  // 没有技术面数据时，把 RSI/ADX/20日线 三列表头标灰，说明这轮没算
+  $('tableMeta').textContent = `${rows.length} 只`
+    + (hasTech ? ' · 含技术面' : ' · 未做深度分析（技术列为空）');
+}
+
+// ── 行业分布 ──
+function renderSectors(d) {
+  const s = d.sectors || {};
+  const keys = Object.keys(s);
+  if (!keys.length) { $('sectorCard').style.display = 'none'; return; }
+  $('sectorCard').style.display = 'block';
+  const max = Math.max(...Object.values(s));
+  $('sectors').innerHTML = keys.map(k => `
+    <div style="display:grid;grid-template-columns:76px 1fr 28px;gap:9px;
+      align-items:center;margin:4px 0;font-size:11px">
+      <span>${esc(k)}</span>
+      <span class="bar" style="width:${(s[k] / max * 100).toFixed(0)}%;
+        background:${s[k] >= 2 ? 'var(--accent)' : 'var(--dim)'}"></span>
+      <span class="num mut">${s[k]}</span>
+    </div>`).join('');
+}
+
+boot();
+</script>
+</body>
+</html>

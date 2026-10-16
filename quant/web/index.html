@@ -6,10 +6,11 @@
 <title>量化看板 · Quant Board</title>
 <style>
   :root{
-    --bg:#080909; --panel:#0e0e11; --panel2:#131317; --border:#24242a;
-    --text:#e8e8e9; --muted:#8b8b94; --accent:#f23c83;
-    --up:#ef4b5e; --down:#3fbf8f;         /* A股习惯：红涨绿跌 */
-    --code:#48d6a4; --model:#e18c78; --you:#f4cf4d;
+    /* 亮色主题：白底 + 浅灰分隔 + 深色文字，像正经金融终端 */
+    --bg:#f5f6f8; --panel:#ffffff; --panel2:#fafbfc; --border:#e3e6ea;
+    --text:#1a1d21; --muted:#6b7280; --accent:#d6336c;
+    --up:#d92b3f; --down:#12a06a;         /* A股习惯：红涨绿跌 */
+    --code:#0e8f68; --model:#c2643f; --you:#a16207;
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--text);
@@ -19,8 +20,10 @@
     border-bottom:1px solid var(--border);background:var(--panel);flex-wrap:wrap}
   #top h1{margin:0;font-size:13px;letter-spacing:.16em;font-weight:400}
   #top .sub{color:var(--accent);font-size:10px;letter-spacing:.12em}
-  select,input,button{background:#191a1e;color:var(--text);border:1px solid var(--border);
+  select,input,button{background:#fff;color:var(--text);border:1px solid var(--border);
     padding:5px 8px;font:inherit;font-size:11px;border-radius:3px}
+  input::placeholder{color:var(--muted)}
+  select:focus,input:focus,button:focus{outline:none;border-color:var(--accent)}
   button{cursor:pointer}
   button:hover{border-color:var(--accent)}
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -31,7 +34,8 @@
   .dot.err{background:var(--accent)}
   #wrap{padding:14px 18px 40px;display:grid;gap:14px}
   #wrap>*{min-width:0}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.05)}
   /* P2-6：取数失败时把旧数据标灰，避免把过期数字当成当前值 */
   #wrap.stale{opacity:.55;transition:opacity .2s}
   .card>h2{margin:0;padding:9px 13px;font-size:11px;font-weight:400;color:var(--muted);
@@ -60,8 +64,8 @@
   .tablewrap{overflow-x:auto;margin:-3px 0}
   .tablewrap table{min-width:max-content}
   td.num{font-variant-numeric:tabular-nums}
-  tr.sel{background:#17171c}
-  tr:hover{background:#141419;cursor:pointer}
+  tr.sel{background:#eef2f7}
+  tr:hover{background:#f7f9fb;cursor:pointer}
   .pos{color:var(--up)} .neg{color:var(--down)} .mut{color:var(--muted)}
   .tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;border:1px solid}
   .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
@@ -70,14 +74,14 @@
   .metric .k{color:var(--muted);font-size:10px}
   .metric .v{font-size:17px;margin-top:3px}
   .log{max-height:260px;overflow:auto;font-size:11px}
-  .log div{padding:3px 0;border-bottom:1px solid #17171c;display:flex;gap:9px}
+  .log div{padding:3px 0;border-bottom:1px solid #eef0f3;display:flex;gap:9px}
   .log .t{color:var(--muted);min-width:118px}
   .log .kind{min-width:44px}
   .legend{display:flex;gap:13px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin-top:6px}
   .legend i{display:inline-block;width:9px;height:3px;vertical-align:middle;margin-right:4px}
   .warn{color:var(--you);font-size:10px}
   #err{display:none;margin:0 18px;padding:10px 13px;border:1px solid var(--accent);
-    border-radius:4px;color:var(--accent);background:#1a0d13;
+    border-radius:4px;color:#a3234f;background:#fdf2f6;
     white-space:pre-wrap;word-break:break-word}
 </style>
 </head>
@@ -108,32 +112,15 @@
   <span class="kv" id="lastAt"></span>
   <a href="/pro.html" title="专业图表：十字光标、缩放平移、参数优化">专业图表 →</a>
   <a href="/decision.html" title="决策驾驶舱：6 个因子怎么加权成决策，风控在哪一步拦截">决策驾驶舱 →</a>
+  <a href="/screen.html" title="选股：全市场快照 + 硬性条件 + 横截面因子排序，可选 AI 排序">选股 →</a>
   <a href="/paper.html" title="模拟盘：可手动下单、自动交易、账户持久化">模拟盘 →</a>
   <a href="http://127.0.0.1:4317/live" target="_blank">Agent 实时面板</a>
-  <a href="/spider-viewer.html" target="_blank">美术查看器</a>
+  <a href="http://127.0.0.1:4317/" target="_blank" title="上游 Prompt Spider 的美术查看器（蜘蛛动画）">美术查看器 ↗</a>
 </div>
 
 <div id="err"></div>
 
 <div id="wrap">
-
-  <!-- 蜘蛛网：量化过程可视化 -->
-  <div class="card">
-    <h2>
-      <span>量化过程 · 蜘蛛网视角 <span class="mut">K线时间序列 → 策略引擎 → 目标动作</span></span>
-      <span class="mut">蜘蛛本体与主面板共用同一份绘制代码</span>
-    </h2>
-    <div class="body">
-      <canvas id="cvSpider"></canvas>
-      <div class="legend">
-        <span><i style="background:#48d6a4"></i>蛛网 = 时间序列</span>
-        <span><i style="background:#ef4b5e"></i>买入信号节点</span>
-        <span><i style="background:#3fbf8f"></i>卖出信号节点</span>
-        <span><i style="background:#f23c83"></i>心跳核心 = 市场状态</span>
-        <span class="mut">虚线触手 = 正在评估的那根 K 线</span>
-      </div>
-    </div>
-  </div>
 
   <!-- 实时行情 -->
   <div class="card">
@@ -163,9 +150,9 @@
       <div class="body">
         <canvas id="cvRsi" height="140"></canvas>
         <div class="legend">
-          <span><i style="background:#f4cf4d"></i>RSI</span>
-          <span><i style="background:#48d6a4"></i>K</span>
-          <span><i style="background:#e18c78"></i>D</span>
+          <span><i style="background:#b8860b"></i>RSI</span>
+          <span><i style="background:#0e9f6e"></i>K</span>
+          <span><i style="background:#d1562f"></i>D</span>
           <span class="mut">30 / 70 为超卖/超买参考线</span>
         </div>
       </div>
@@ -239,23 +226,20 @@
 </div>
 
 <script type="module">
-import { QuantSpiderRenderer } from './spider-web.js';
-
 const $ = id => document.getElementById(id);
 const API = '/api/quant';
 let DATA = null, META = null, SIG = 'rsi_reversion';
-let SPIDER = null, rafId = null;
 
-// ---------- 颜色 ----------
+// ---------- 颜色（亮色主题：画布底色是白卡片，所以线条/文字都要够深） ----------
 const C = {
-  text:'#e8e8e9', muted:'#8b8b94', grid:'#1b1b20', border:'#24242a',
-  up:'#ef4b5e', down:'#3fbf8f',
-  ema12:'#f4cf4d', ema26:'#7aa2f7', sma20:'#9d7cd8',
-  bbu:'#4a4a55', bbl:'#4a4a55', bbm:'#6b6b78',
-  dif:'#f4cf4d', dea:'#7aa2f7', hist:'#5a5a66',
-  rsi:'#f4cf4d', k:'#48d6a4', d:'#e18c78',
-  entry:'#ef4b5e', exit:'#3fbf8f',
-  equity:['#48d6a4','#f4cf4d','#e18c78','#7aa2f7','#9d7cd8'],
+  text:'#1a1d21', muted:'#6b7280', grid:'#eceff3', border:'#e3e6ea',
+  up:'#d92b3f', down:'#12a06a',
+  ema12:'#b8860b', ema26:'#2563eb', sma20:'#7c3aed',
+  bbu:'#a8b0ba', bbl:'#a8b0ba', bbm:'#8b93a1',
+  dif:'#b8860b', dea:'#2563eb', hist:'#9aa3ad',
+  rsi:'#b8860b', k:'#0e9f6e', d:'#d1562f',
+  entry:'#d92b3f', exit:'#12a06a',
+  equity:['#0e9f6e','#b8860b','#d1562f','#2563eb','#7c3aed'],
 };
 
 // ---------- 工具 ----------
@@ -379,47 +363,12 @@ async function load(force) {
 // ---------- 渲染 ----------
 function render() {
   if (!DATA) return;
-  quote(); spiderView();
+  quote();
   // P1-5：表格必须排在图表**之前**。
   // 表格填满后会撑大列宽，如果图表先画，位图宽度就与最终 CSS 宽度不一致
   // （实测 @900 出现 attr=818 而 css.w=931，画面被拉伸 13.8%）。
   btTable(); paper(); equityChart(); logTable(); snapshot();
   mainChart(); macdChart(); rsiChart();
-}
-
-/**
- * 蜘蛛网视角：把量化数据映射到蛛网上，并持续动画。
- *
- * 为什么要持续重绘：蜘蛛的腿在走、心跳核心在脉动，这些都是 time 驱动的，
- * 停止重绘画面就"死"了。
- *
- * 但**不能每次数据刷新都重启循环** —— 自动刷新每 30 秒触发一次 render()，
- * 如果每次都 cancel + 重新 requestAnimationFrame，会反复建立/拆除循环，
- * 而且缓存键不变时 prepare() 也白算。所以数据变了只更新 DATA 引用
- * （循环闭包里读的是模块变量），只有策略切换才真正重启。
- */
-let spiderLoopKey = '';
-function spiderView() {
-  const cv = $('cvSpider');
-  if (!SPIDER) SPIDER = new QuantSpiderRenderer(cv);
-
-  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const win = Math.max(80, Math.min(160, Math.round(DATA.bars.length * 0.55)));
-  const key = `${SIG}|${win}|${reduced}`;
-  if (key === spiderLoopKey && rafId !== null) return;   // 已在跑，数据会自动生效
-
-  spiderLoopKey = key;
-  if (rafId !== null) cancelAnimationFrame(rafId);
-  const loop = () => {
-    SPIDER.render(DATA, {
-      strategy: SIG,
-      reducedMotion: reduced,
-      time: performance.now() / 1000,
-      window: win,
-    });
-    rafId = requestAnimationFrame(loop);
-  };
-  loop();
 }
 
 function quote() {
@@ -483,7 +432,7 @@ function mainChart() {
     c.beginPath(); c.moveTo(x, Y(b.h)); c.lineTo(x, Y(b.l)); c.lineWidth = 1; c.stroke();
     const yo = Y(b.o), yc = Y(b.c);
     const top = Math.min(yo, yc), hgt = Math.max(1, Math.abs(yc - yo));
-    if (up) { c.fillStyle = '#080909'; c.fillRect(x - bw/2, top, bw, hgt);
+    if (up) { c.fillStyle = '#ffffff'; c.fillRect(x - bw/2, top, bw, hgt);
               c.strokeRect(x - bw/2 + .5, top + .5, bw - 1, Math.max(1, hgt - 1)); }
     else c.fillRect(x - bw/2, top, bw, hgt);
   }
@@ -748,7 +697,7 @@ function snapshot() {
 }
 
 // ---------- 启动 ----------
-// P1-6：全局错误兜底。静态 import 失败（例如 /spider.js 挂掉）会中止整个
+// P1-6：全局错误兜底。静态 import 失败（例如 chart 模块挂掉）会中止整个
 // 模块脚本、boot() 永不执行，页面变成一片空白且没有任何提示（实测）。
 // 这两个监听器保证至少能告诉用户发生了什么。
 addEventListener('error', e => {

@@ -6,9 +6,10 @@
 <title>专业图表 · Pro Chart</title>
 <style>
   :root{
-    --bg:#080909;--panel:#0e0e11;--panel2:#131317;--border:#24242a;
-    --text:#e8e8e9;--muted:#8b8b94;--accent:#f23c83;
-    --up:#ef4b5e;--down:#3fbf8f;--warn:#f4cf4d;--ok:#48d6a4;
+    /* 亮色主题：白底 + 浅灰分隔 + 深色文字 */
+    --bg:#f5f6f8;--panel:#ffffff;--panel2:#fafbfc;--border:#e3e6ea;
+    --text:#1a1d21;--muted:#6b7280;--accent:#d6336c;
+    --up:#d92b3f;--down:#12a06a;--warn:#b8860b;--ok:#12a06a;
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--text);
@@ -20,8 +21,10 @@
     border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:30}
   #top h1{margin:0;font-size:12px;letter-spacing:.14em;font-weight:400;white-space:nowrap}
   .sub{color:var(--accent);font-size:9px;letter-spacing:.1em}
-  select,input,button{background:#191a1e;color:var(--text);border:1px solid var(--border);
+  select,input,button{background:#fff;color:var(--text);border:1px solid var(--border);
     padding:4px 7px;font:inherit;font-size:11px;border-radius:3px}
+  input::placeholder{color:var(--muted)}
+  select:focus,input:focus,button:focus{outline:none;border-color:var(--accent)}
   button{cursor:pointer}
   button:hover:not(:disabled){border-color:var(--accent)}
   button:disabled{opacity:.4;cursor:not-allowed}
@@ -34,7 +37,8 @@
   .dot.idle{background:var(--muted)}
 
   #wrap{padding:10px 13px 40px;display:grid;gap:10px;max-width:2000px;margin:0 auto}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;min-width:0}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;min-width:0;
+    box-shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.05)}
   .card>h2{margin:0;padding:6px 11px;font-size:10px;font-weight:400;color:var(--muted);
     letter-spacing:.08em;border-bottom:1px solid var(--border);
     display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
@@ -52,21 +56,21 @@
   .statrow b{font-weight:400;font-variant-numeric:tabular-nums}
 
   table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #17171c;white-space:nowrap}
+  th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #eef0f3;white-space:nowrap}
   th{color:var(--muted);font-weight:400;font-size:10px}
   th:first-child,td:first-child{text-align:left}
   td.num{font-variant-numeric:tabular-nums}
-  tr.sel{background:#17171c}
-  tr:hover{background:#141419;cursor:pointer}
+  tr.sel{background:#eef2f7}
+  tr:hover{background:#f7f9fb;cursor:pointer}
   .tablewrap{overflow-x:auto}
 
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
   label.f{display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--muted)}
   .note{color:var(--muted);font-size:10px;line-height:1.8;padding:8px 11px;
-    background:#0b0b0e;border-left:2px solid var(--warn)}
+    background:#fafbfc;border-left:2px solid var(--warn)}
   .note.ok{border-left-color:var(--ok)}
   #err{display:none;margin:0 13px;padding:9px 12px;border:1px solid var(--up);
-    border-radius:4px;color:var(--up);background:#1a0d13;white-space:pre-wrap;font-size:11px}
+    border-radius:4px;color:#b02535;background:#fdf2f3;white-space:pre-wrap;font-size:11px}
   .warn-item{color:var(--warn);font-size:11px;padding:2px 0}
   .up{color:var(--up)} .dn{color:var(--down)} .wn{color:var(--warn)} .mut{color:var(--muted)}
   .badge{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;
@@ -83,8 +87,9 @@
   <span class="spacer"></span>
   <a href="/">看板</a>
   <a href="/decision.html">决策驾驶舱</a>
+  <a href="/screen.html">选股</a>
   <a href="/paper.html">模拟盘</a>
-  <a href="/spider-viewer.html" target="_blank">美术</a>
+  <a href="http://127.0.0.1:4317/" target="_blank" title="上游 Prompt Spider 的美术查看器（蜘蛛动画）">美术 ↗</a>
 </div>
 <div id="err"></div>
 <div id="bar"></div>
@@ -447,12 +452,12 @@ function applyIndicators() {
   // ── 主图 ──
   cvMain.setBars(bars);
   cvMain.clearSeries();
-  if (has('ema12')) cvMain.addSeries(seriesFrom(DATA, 'ema12', '#f4cf4d', { width: 1.3 }));
-  if (has('ema26')) cvMain.addSeries(seriesFrom(DATA, 'ema26', '#3b82f6', { width: 1.3 }));
-  if (has('sma20')) cvMain.addSeries(seriesFrom(DATA, 'sma20', '#a78bfa', { width: 1.1 }));
-  if (has('bb_upper')) cvMain.addSeries(seriesFrom(DATA, 'bb_upper', '#4a4a54', { width: 1, dash: [3, 3] }));
-  if (has('bb_lower')) cvMain.addSeries(seriesFrom(DATA, 'bb_lower', '#4a4a54', { width: 1, dash: [3, 3] }));
-  if (has('bb_mid')) cvMain.addSeries(seriesFrom(DATA, 'bb_mid', '#3a3a44', { width: 1, dash: [2, 4] }));
+  if (has('ema12')) cvMain.addSeries(seriesFrom(DATA, 'ema12', '#b8860b', { width: 1.3 }));
+  if (has('ema26')) cvMain.addSeries(seriesFrom(DATA, 'ema26', '#2563eb', { width: 1.3 }));
+  if (has('sma20')) cvMain.addSeries(seriesFrom(DATA, 'sma20', '#7c3aed', { width: 1.1 }));
+  if (has('bb_upper')) cvMain.addSeries(seriesFrom(DATA, 'bb_upper', '#a8b0ba', { width: 1, dash: [3, 3] }));
+  if (has('bb_lower')) cvMain.addSeries(seriesFrom(DATA, 'bb_lower', '#a8b0ba', { width: 1, dash: [3, 3] }));
+  if (has('bb_mid')) cvMain.addSeries(seriesFrom(DATA, 'bb_mid', '#8b93a1', { width: 1, dash: [2, 4] }));
 
   // 买卖标记：entries/exits 是**索引数组**（不是带 at/price 的对象）。
   // 最初按对象写，会静默画不出任何标记。
@@ -476,24 +481,24 @@ function applyIndicators() {
   cvMacd.setBars(bars);
   cvMacd.clearSeries();
   cvMacd.setHistogram(has('macd_hist')
-    ? { values: ind.macd_hist.values, colorPos: '#ef4b5e', colorNeg: '#3fbf8f' } : null);
-  if (has('macd_dif')) cvMacd.addSeries(seriesFrom(DATA, 'macd_dif', '#f4cf4d', { width: 1.2 }));
-  if (has('macd_dea')) cvMacd.addSeries(seriesFrom(DATA, 'macd_dea', '#3b82f6', { width: 1.2 }));
+    ? { values: ind.macd_hist.values, colorPos: '#d92b3f', colorNeg: '#12a06a' } : null);
+  if (has('macd_dif')) cvMacd.addSeries(seriesFrom(DATA, 'macd_dif', '#b8860b', { width: 1.2 }));
+  if (has('macd_dea')) cvMacd.addSeries(seriesFrom(DATA, 'macd_dea', '#2563eb', { width: 1.2 }));
 
   // ── 震荡指标（RSI / KDJ 切换）──
   cvOsc.setBars(bars);
   cvOsc.clearSeries();
   if (OSC === 'rsi' && has('rsi')) {
-    cvOsc.addSeries(seriesFrom(DATA, 'rsi', '#f23c83', { width: 1.4 }));
+    cvOsc.addSeries(seriesFrom(DATA, 'rsi', '#d6336c', { width: 1.4 }));
     cvOsc.setHlines([
-      { value: 70, color: '#5a3a44', label: '70 超买' },
-      { value: 50, color: '#2a2a32' },
-      { value: 30, color: '#3a5a4a', label: '30 超卖' },
+      { value: 70, color: '#b8446a', label: '70 超买' },
+      { value: 50, color: '#c7ccd4' },
+      { value: 30, color: '#26805f', label: '30 超卖' },
     ]);
   } else if (has('kdj_k')) {
-    cvOsc.addSeries(seriesFrom(DATA, 'kdj_k', '#f4cf4d', { width: 1.2 }));
-    cvOsc.addSeries(seriesFrom(DATA, 'kdj_d', '#3b82f6', { width: 1.2 }));
-    cvOsc.setHlines([{ value: 80, color: '#5a3a44' }, { value: 20, color: '#3a5a4a' }]);
+    cvOsc.addSeries(seriesFrom(DATA, 'kdj_k', '#b8860b', { width: 1.2 }));
+    cvOsc.addSeries(seriesFrom(DATA, 'kdj_d', '#2563eb', { width: 1.2 }));
+    cvOsc.setHlines([{ value: 80, color: '#b8446a' }, { value: 20, color: '#26805f' }]);
   }
 
   renderLegends();
@@ -515,14 +520,14 @@ function renderLegends() {
   const L = (items) => items.map(([label, color, dash]) =>
     `<span><i style="background:${color};${dash ? `opacity:.6` : ''}"></i>${label}</span>`).join('');
   $('legendMain').innerHTML = L([
-    ['EMA12', '#f4cf4d'], ['EMA26', '#3b82f6'], ['SMA20', '#a78bfa'],
-    ['布林上/下轨', '#4a4a54'],
-    ['买入', '#ef4b5e'], ['卖出', '#3fbf8f'],
+    ['EMA12', '#b8860b'], ['EMA26', '#2563eb'], ['SMA20', '#7c3aed'],
+    ['布林上/下轨', '#a8b0ba'],
+    ['买入', '#d92b3f'], ['卖出', '#12a06a'],
   ]);
-  $('legendMacd').innerHTML = L([['DIF', '#f4cf4d'], ['DEA', '#3b82f6'], ['柱', '#6a6a74']]);
+  $('legendMacd').innerHTML = L([['DIF', '#b8860b'], ['DEA', '#2563eb'], ['柱', '#9aa3ad']]);
   $('legendOsc').innerHTML = OSC === 'rsi'
-    ? L([['RSI14', '#f23c83'], ['70/30 参考线', '#5a3a44']])
-    : L([['K', '#f4cf4d'], ['D', '#3b82f6']]);
+    ? L([['RSI14', '#d6336c'], ['70/30 参考线', '#b8446a']])
+    : L([['K', '#b8860b'], ['D', '#2563eb']]);
 }
 
 /** 光标悬停时显示的详细数据 */
@@ -561,11 +566,11 @@ function tooltipHtml(i) {
   const at = k => ind[k]?.values?.[i];
   const c = chg === null ? 'mut' : chg >= 0 ? 'up' : 'dn';
   return `
-    <div style="color:#8b8b94;margin-bottom:3px">${esc(b.t)}</div>
+    <div style="color:#6b7280;margin-bottom:3px">${esc(b.t)}</div>
     <div>开 <b>${fmt(b.o)}</b>　高 <b>${fmt(b.h)}</b></div>
     <div>低 <b>${fmt(b.l)}</b>　收 <b class="${c}">${fmt(b.c)}</b></div>
     <div>涨跌 <b class="${c}">${pctStr(chg)}</b>　量 <b>${fmt(b.v, 0)}</b></div>
-    <div style="border-top:1px solid #2a2a32;margin:4px 0 3px"></div>
+    <div style="border-top:1px solid #e3e6ea;margin:4px 0 3px"></div>
     <div>EMA12 <b>${fmt(at('ema12'))}</b>　EMA26 <b>${fmt(at('ema26'))}</b></div>
     <div>BOLL <b>${fmt(at('bb_lower'))}</b> / <b>${fmt(at('bb_upper'))}</b></div>
     <div>RSI <b>${fmt(at('rsi'), 1)}</b>　ADX <b>${fmt(at('adx'), 1)}</b></div>
@@ -679,11 +684,11 @@ boot().then(() => {
 <style>
   /* 标的选择器（与模拟盘一致的两层设计） */
   .results{max-height:180px;overflow:auto;margin-top:7px;display:none;
-    border:1px solid var(--border);border-radius:3px;background:#0b0b0e}
+    border:1px solid var(--border);border-radius:3px;background:#fff}
   .results.on{display:block}
   .results .it{display:flex;justify-content:space-between;gap:8px;padding:5px 9px;
-    border-bottom:1px solid #17171c;cursor:pointer;font-size:11px}
-  .results .it:hover{background:#17171c}
+    border-bottom:1px solid #eef0f3;cursor:pointer;font-size:11px}
+  .results .it:hover{background:#f2f5f8}
   .results .it b{font-weight:400}
   .results .it .px{color:var(--muted);font-size:10px;white-space:nowrap}
   .results .it .px i{font-style:normal}
@@ -691,7 +696,7 @@ boot().then(() => {
   .chip{padding:2px 8px;border:1px solid var(--border);border-radius:9px;
     font-size:10px;color:var(--muted);cursor:pointer;white-space:nowrap}
   .chip:hover{border-color:var(--accent);color:var(--text)}
-  .chip.cur{border-color:var(--accent);color:var(--text);background:#1a0d13}
+  .chip.cur{border-color:var(--accent);color:var(--text);background:#fdf2f6}
   @media (max-width:760px){
     #top{gap:6px;padding:7px 9px}
     #top h1{font-size:11px}

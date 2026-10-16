@@ -6,9 +6,14 @@
 <title>决策驾驶舱 · Decision Cockpit</title>
 <style>
   :root{
-    --bg:#080909;--panel:#0e0e11;--panel2:#131317;--border:#24242a;
-    --text:#e8e9e9;--muted:#8b8b94;--dim:#5a5a64;--accent:#f23c83;
-    --up:#ef4b5e;--down:#3fbf8f;--warn:#f4cf4d;--ok:#48d6a4;
+    /* 亮色主题，与量化看板/选股页保持一致。
+       ⚠️ 这里的取值必须和 decision-cockpit.js 里的 `const C = {...}` 对得上 ——
+          canvas 是白底深字，页面要是深色就成了「深色页面里一块白画布」
+          （实际发生过：主题改造时 canvas 先改了，页面 CSS 漏了）。
+         两边都改完才算数。 */
+    --bg:#f5f6f8;--panel:#ffffff;--panel2:#fafbfc;--border:#e3e6ea;
+    --text:#1a1d21;--muted:#6b7280;--dim:#9aa1ab;--accent:#d6336c;
+    --up:#d92b3f;--down:#12a06a;--warn:#b8860b;--ok:#0e8f68;
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--text);
@@ -20,7 +25,7 @@
     position:sticky;top:0;z-index:30}
   #top h1{margin:0;font-size:12px;letter-spacing:.14em;font-weight:400}
   .sub{color:var(--accent);font-size:9px;letter-spacing:.1em}
-  select,input,button{background:#191a1e;color:var(--text);border:1px solid var(--border);
+  select,input,button{background:#fff;color:var(--text);border:1px solid var(--border);
     padding:4px 8px;font:inherit;font-size:11px;border-radius:3px}
   button{cursor:pointer}
   button:hover{border-color:var(--accent)}
@@ -42,17 +47,17 @@
   .row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
   label.f{display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--muted)}
   table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{text-align:right;padding:4px 8px;border-bottom:1px solid #17171c;white-space:nowrap}
+  th,td{text-align:right;padding:4px 8px;border-bottom:1px solid #eef1f4;white-space:nowrap}
   th{color:var(--muted);font-weight:400;font-size:10px}
   th:first-child,td:first-child{text-align:left}
   td.num{font-variant-numeric:tabular-nums}
   .tablewrap{overflow-x:auto}
   .note{color:var(--muted);font-size:10px;line-height:1.85;padding:9px 12px;
-    background:#0b0b0e;border-left:2px solid var(--accent)}
+    background:var(--panel2);border-left:2px solid var(--accent)}
   .up{color:var(--up)}.dn{color:var(--down)}.wn{color:var(--warn)}
   .ok{color:var(--ok)}.mut{color:var(--muted)}
   #err{display:none;margin:0 14px;padding:9px 12px;border:1px solid var(--up);
-    border-radius:4px;color:var(--up);background:#1a0d13;white-space:pre-wrap}
+    border-radius:4px;color:var(--up);background:#fdf2f4;white-space:pre-wrap}
 
   /* 一句话摘要 */
   .headline{padding:12px 14px 4px;font-size:17px;font-weight:700;line-height:1.4}
@@ -63,7 +68,7 @@
 
   /* 风控否决时的解释条 */
   .veto{margin:0 14px 12px;padding:8px 11px;border-radius:3px;
-    background:#1a0d13;border-left:2px solid var(--up);
+    background:#fdf2f4;border-left:2px solid var(--up);
     color:var(--muted);font-size:10.5px;line-height:1.7}
 
   /* 结论兜底：即使 canvas 出问题，HTML 也把答案说清楚 */
@@ -75,29 +80,29 @@
   #fallback .why small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
 
   .results{max-height:180px;overflow:auto;margin-top:8px;display:none;
-    border:1px solid var(--border);border-radius:3px;background:#0b0b0e}
+    border:1px solid var(--border);border-radius:3px;background:#fff}
   .results.on{display:block}
   .results .it{display:flex;justify-content:space-between;gap:8px;padding:5px 9px;
-    border-bottom:1px solid #17171c;cursor:pointer;font-size:11px}
-  .results .it:hover{background:#17171c}
+    border-bottom:1px solid #eef1f4;cursor:pointer;font-size:11px}
+  .results .it:hover{background:#f7f9fb}
   .results .it b{font-weight:400}
   .results .it .px{color:var(--muted);font-size:10px;white-space:nowrap}
   .picked{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
   .chip{padding:2px 8px;border:1px solid var(--border);border-radius:9px;
     font-size:10px;color:var(--muted);cursor:pointer;white-space:nowrap}
   .chip:hover{border-color:var(--accent);color:var(--text)}
-  .chip.cur{border-color:var(--accent);color:var(--text);background:#1a0d13}
+  .chip.cur{border-color:var(--accent);color:var(--text);background:#fdf2f6}
 
   /* 翻转子 —— HTML 版，比 canvas 更易读 */
   .flip{display:grid;gap:7px;padding:10px 12px}
   .flip .it{display:grid;grid-template-columns:64px 54px 1fr 150px;gap:10px;
-    align-items:center;padding:7px 9px;border-radius:3px;background:#0b0b0e;
+    align-items:center;padding:7px 9px;border-radius:3px;background:var(--panel2);
     border-left:2px solid var(--dim)}
   .flip .it.done{border-left-color:var(--ok)}
   .flip .it.near{border-left-color:var(--warn)}
   .flip .it.far{border-left-color:var(--dim)}
   .flip .it b{font-weight:400}
-  .flip .track{height:6px;background:#17171c;border-radius:3px;overflow:hidden}
+  .flip .track{height:6px;background:#eef1f4;border-radius:3px;overflow:hidden}
   .flip .track span{display:block;height:100%}
 
   @media (max-width:900px){
@@ -116,6 +121,7 @@
   <span class="spacer"></span>
   <a href="/">看板</a>
   <a href="/pro.html">专业图表</a>
+  <a href="/screen.html">选股</a>
   <a href="/paper.html">模拟盘</a>
 </div>
 <div id="err"></div>

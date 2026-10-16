@@ -199,11 +199,12 @@ export class Chart {
     this.gridY = opts.gridY ?? 4;
     this.baseline = opts.baseline ?? null;      // 水平参考线（如初始资金）
     this.theme = Object.assign({
-      bg: '#0e0e11', grid: '#1b1b20', gridStrong: '#26262e',
-      text: '#8b8b94', textStrong: '#e8e8e9',
-      up: '#ef4b5e', down: '#3fbf8f',
-      crosshair: '#8b8b94', crosshairBg: 'rgba(20,20,24,.94)',
-      border: '#3a3a44',
+      // 亮色主题：画布底色是白卡片，网格/文字/轴线都要在白底上够深
+      bg: '#ffffff', grid: '#eceff3', gridStrong: '#d8dde3',
+      text: '#6b7280', textStrong: '#1a1d21',
+      up: '#d92b3f', down: '#12a06a',
+      crosshair: '#8b93a1', crosshairBg: 'rgba(255,255,255,.96)',
+      border: '#c7ccd4',
     }, opts.theme || {});
 
     this.bars = [];
@@ -598,7 +599,7 @@ export class Chart {
   _drawLine(c, s, range) {
     const vp = this.viewport;
     c.save();
-    c.strokeStyle = s.color || '#fff';
+    c.strokeStyle = s.color || '#1a1d21';
     c.lineWidth = s.width || 1.4;
     if (s.dash) c.setLineDash(s.dash);
     c.beginPath();
@@ -780,10 +781,10 @@ export class Tooltip {
     this.el.className = 'chart-tooltip';
     Object.assign(this.el.style, {
       position: 'absolute', pointerEvents: 'none', zIndex: 20,
-      background: 'rgba(16,16,20,.96)', border: '1px solid #2a2a32',
+      background: 'rgba(255,255,255,.98)', border: '1px solid #e3e6ea',
       borderRadius: '4px', padding: '7px 10px', fontSize: '11px',
-      lineHeight: '1.65', color: '#e8e8e9', whiteSpace: 'nowrap',
-      boxShadow: '0 4px 14px rgba(0,0,0,.5)', display: 'none',
+      lineHeight: '1.65', color: '#1a1d21', whiteSpace: 'nowrap',
+      boxShadow: '0 6px 20px rgba(16,24,40,.14)', display: 'none',
       fontFamily: 'Consolas, "Cascadia Code", monospace',
       transition: 'opacity .08s',
     }, opts.style || {});

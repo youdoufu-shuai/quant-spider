@@ -52,6 +52,7 @@ TEST_FILES = [
     "test_autotrader.py",
     "test_edge_cases.py",
     "test_perf.py",
+    "test_screener.py",
 ]
 
 BANNED_NAMES = {
@@ -74,6 +75,7 @@ MIN_CASES_PER_FILE = {
     "test_autotrader.py": 35,
     "test_edge_cases.py": 40,
     "test_perf.py": 2,
+    "test_screener.py": 30,
 }
 
 
