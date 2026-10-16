@@ -90,6 +90,7 @@ const PY_SUITES = [
   { id: 'autotrader',      label: 'autotrader.py --selftest',   script: 'quant/autotrader.py',      args: ['--selftest'], network: false },
   { id: 'optimizer',       label: 'optimizer.py --selftest',    script: 'quant/optimizer.py',       args: ['--selftest'], network: false },
   { id: 'ai_settings',     label: 'ai_settings.py --selftest',  script: 'quant/ai_settings.py',     args: ['--selftest'], network: false },
+  { id: 'decision',        label: 'decision.py --selftest',     script: 'quant/decision.py',        args: ['--selftest'], network: false },
   { id: 'datasource',      label: 'datasource.py --selftest',   script: 'quant/datasource.py',      args: ['--selftest'], network: true  },
   { id: 'symbols',         label: 'symbols.py --selftest',      script: 'quant/symbols.py',         args: ['--selftest'], network: true  },
 ];

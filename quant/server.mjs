@@ -402,6 +402,49 @@ const server = http.createServer(async (req, res) => {
     // A 股 6741 只、加密 511 对，不可能全塞进 <select>（会卡死浏览器）。
     // 所以下拉只给常用项，其余走搜索。
     // ⚠️ 这些路由必须在 serveStatic 之前，否则会被当成静态文件路径 404。
+    // ── 决策快照 API（供「决策蛛网」可视化）────────────────
+    // 无状态：给定标的与参数，算出「此刻会怎么决策」的完整分解。
+    // 与 /api/paper/:id/decide 的区别：那个依赖某个模拟盘会话的状态，
+    // 这个不需要任何会话，纯粹是「如果现在按这套参数决策，结果是什么」。
+    if (pathname === '/api/decision' && req.method === 'GET') {
+      const u = new URL(req.url, 'http://x');
+      const market = u.searchParams.get('market') || 'ashare';
+      const args = [
+        '--market', market,
+        '--interval', u.searchParams.get('interval') || '1d',
+        '--limit', String(Math.max(120, Math.min(2000,
+          Number(u.searchParams.get('limit')) || 500))),
+        '--compact',
+      ];
+      const sym = u.searchParams.get('symbol');
+      if (sym) args.push('--symbol', sym);
+      // 持仓假设：默认空仓。传 position 才能看到止损/止盈的拦截效果 ——
+      // 空仓时风控闸门永远不会触发，那恰恰是蛛网最有价值的一帧。
+      const pos = Number(u.searchParams.get('position'));
+      if (Number.isFinite(pos) && pos > 0) {
+        args.push('--position', String(Math.min(1, pos)));
+        const ep = Number(u.searchParams.get('entry'));
+        if (Number.isFinite(ep) && ep > 0) args.push('--entry', String(ep));
+        const pk = Number(u.searchParams.get('peak'));
+        if (Number.isFinite(pk) && pk > 0) args.push('--peak', String(pk));
+      }
+      const dd = Number(u.searchParams.get('drawdown'));
+      if (Number.isFinite(dd) && dd > 0) {
+        args.push('--drawdown', String(Math.min(1, dd)));
+      }
+      if (u.searchParams.get('halted') === '1') args.push('--halted');
+      try {
+        const r = await runPython(path.join(here, 'decision.py'), args, 90000);
+        res.writeHead(r.error ? 400 : 200,
+                      { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(r));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': TYPES['.json'] });
+        res.end(JSON.stringify({ error: String(e.message || e) }));
+      }
+      return;
+    }
+
     // ── AI 设置 API ────────────────────────────────────────
     // 安全要点：GET 永远只回**脱敏**视图（apiKeySet + sk-…abcd），
     // 绝不回密钥原值；密钥只存在于 quant/state/ai-config.json（已 gitignore）。
