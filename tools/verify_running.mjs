@@ -12,7 +12,6 @@ const outDir = process.argv[2] || null;
 if (outDir && !existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 
 const PAGES = [
-  { name: '蜘蛛UI', url: 'http://127.0.0.1:4317/', canvas: null },
   { name: '量化看板', url: 'http://127.0.0.1:4400/', canvas: 'cvMain' },
   { name: '专业图表', url: 'http://127.0.0.1:4400/pro.html', canvas: 'cvMain' },
   { name: '决策驾驶舱', url: 'http://127.0.0.1:4400/decision.html', canvas: 'cvCockpit' },

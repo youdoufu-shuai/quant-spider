@@ -1,6 +1,6 @@
 @echo off
 rem ============================================================
-rem  量化看板  --  一键启动
+rem  量化工作台  --  一键启动
 rem
 rem  启动后浏览器打开 http://127.0.0.1:4400/
 rem  保持本窗口开启 = 服务持续运行
@@ -22,14 +22,12 @@ if not exist "%QUANT_PYTHON%" (
 )
 
 echo ============================================
-echo   量化看板  QUANT BOARD
+echo   量化工作台  QUANT WORKBENCH
 echo ============================================
 echo.
-echo   量化看板  http://127.0.0.1:%QUANT_PORT%/
-echo   Agent 实时 http://127.0.0.1:4317/live
-echo   蜘蛛美术  http://127.0.0.1:4317/spider-viewer.html
+echo   量化工作台  http://127.0.0.1:%QUANT_PORT%/
 echo.
-echo   数据    真实行情（Binance 镜像 / 新浪财经）
+echo   数据    真实行情（新浪财经 / Binance 镜像）
 echo   边界    只读行情，无交易接口，不产生任何真实委托
 echo.
 echo   首次加载需 0.4-2 秒（含真实网络请求），之后走缓存

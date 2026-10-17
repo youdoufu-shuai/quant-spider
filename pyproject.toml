@@ -1,10 +1,10 @@
 # ============================================================================
-#  quant-spider —— 项目元信息 + ruff 配置
+#  quant-workbench —— 项目元信息 + ruff 配置
 # ----------------------------------------------------------------------------
 #  ⚠ 这**不是**打包配置，本项目也不通过 pip / npm 分发：
 #     · 刻意没有 [build-system] —— 写了会让人以为可以 `pip install .`
 #     · Node 侧元信息在 package.json（零 npm 依赖）
-#     · 运行方式就是跑仓库里的脚本：node server.mjs / node quant/server.mjs
+#     · 运行方式就是跑仓库里的脚本：node quant/server.mjs
 #     · 写 [project] 是为了让 CI、编辑器、依赖扫描工具能读到版本与许可证
 #
 #  ⚠ 关于 dependencies = []（诚实声明）：
@@ -18,9 +18,9 @@
 # ============================================================================
 
 [project]
-name = "quant-spider"
+name = "quant-workbench"
 version = "2.0.0"
-description = "真实行情量化看板 + Canvas 2D 蜘蛛过程可视化 / MCP 实时展示（Node 侧零依赖）"
+description = "A 股量化工作台：全市场选股 + AI 排序 + 市场云图 + 决策驾驶舱 + 回测 + 模拟盘"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

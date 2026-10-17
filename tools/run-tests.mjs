@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ============================================================================
- *  quant-spider 统一测试入口
+ *  quant-workbench 统一测试入口
  * ============================================================================
  *
  *  用法：
@@ -10,7 +10,7 @@
  *    node tools/run-tests.mjs --network-only  只跑联网套件
  *    node tools/run-tests.mjs --strict        联网套件失败也判定为失败
  *    node tools/run-tests.mjs --python-only   只跑 Python 自检
- *    node tools/run-tests.mjs --node-only     只跑 Node 测试
+ *    node tools/run-tests.mjs --node-only     只跑 Node 测试（当前无该套件）
  *    node tools/run-tests.mjs --syntax-only   只做语法检查（所有 .mjs + HTML 内联 module）
  *    node tools/run-tests.mjs --list          只列套件，不执行
  *    node tools/run-tests.mjs --verbose       打印每个套件的完整输出
@@ -29,7 +29,6 @@
  *    decision.py --selftest      56 断言   离线
  *    datasource.py --selftest     7 断言   ⚠ 联网（真实抓新浪行情）
  *    symbols.py --selftest       25 断言   ⚠ 联网（首次要枚举 8265 只 A 股 + 511 个币对，约 98s）
- *    tests/*.test.mjs            44 通过 + 1 跳过
  *
  *  ⚠️ 这里曾经有一条 `test_indicators.py 55 断言`。那个文件与
  *     quant/tests/test_indicators.py 同名，而 quant/tests/run.py 的 sys.path

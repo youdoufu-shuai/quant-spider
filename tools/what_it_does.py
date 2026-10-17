@@ -48,7 +48,7 @@ def run(args: list[str], timeout: int = 90) -> tuple[int, str]:
 # ══════════════════════════════════════════════════════════
 def main() -> int:
     print("=" * 74)
-    print("  quant-spider 能力实测")
+    print("  quant-workbench 能力实测")
     print("=" * 74)
     print(f"  Python {sys.version.split()[0]}   {ROOT}")
 
@@ -253,21 +253,10 @@ def main() -> int:
     except Exception as e:                              # noqa: BLE001
         print(f"  {FAIL} {type(e).__name__}: {str(e)[:100]}")
 
-    # ── 10. MCP ─────────────────────────────────────────
-    head("10. MCP（让 Agent 驱动蜘蛛）")
-    mcp_dir = ROOT / "mcp"
-    nm = mcp_dir / "node_modules"
-    print(f"  {'✅' if (mcp_dir / 'server.mjs').exists() else '❌'} "
-          f"mcp/server.mjs 存在")
-    print(f"  {'✅' if nm.exists() else '⏭'} mcp/node_modules "
-          f"{'已安装' if nm.exists() else '未安装（需 npm --prefix mcp ci）'}")
-    print(f"  {'✅' if (mcp_dir / 'tests').exists() else '❌'} mcp/tests 存在")
-
-    # ── 11. 服务 ────────────────────────────────────────
-    head("11. 两个 Web 服务")
+    # ── 10. Web 服务 ────────────────────────────────────
+    head("10. Web 服务")
     import urllib.request
-    for name, url in (("蜘蛛 UI", "http://127.0.0.1:4317/"),
-                      ("量化看板", "http://127.0.0.1:4400/"),
+    for name, url in (("量化看板", "http://127.0.0.1:4400/"),
                       ("决策驾驶舱", "http://127.0.0.1:4400/decision.html"),
                       ("专业图表", "http://127.0.0.1:4400/pro.html"),
                       ("模拟盘", "http://127.0.0.1:4400/paper.html")):

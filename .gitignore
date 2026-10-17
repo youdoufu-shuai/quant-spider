@@ -54,7 +54,6 @@ notes.md
 
 # Explicit user exports and local MCP data
 exports/
-.prompt-spider/
 
 # ─────────────────────────────────────────────────────────────
 #  以下是量化模块新增部分
@@ -80,11 +79,6 @@ quant/state/
 !quant/state/.gitkeep
 
 # 实时会话发现文件（含预览能力令牌）
-# ⚠️ 这个文件由 mcp/live-feed.mjs 在运行时写入，内容含**预览能力 token**
-#    （形如 ...#token=<64位十六进制>）。虽然只在本地生效、进程退出即失效，
-#    但把凭据类内容提交进仓库是不对的。
-#    另外它每次运行都会变，提交进去只会造成无意义的 diff。
-lib/live-sessions.json
 
 # headless Chrome 的 profile 目录（每个几十 MB，抓图验证用）
 .shot-profile/

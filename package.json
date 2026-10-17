@@ -1,25 +1,35 @@
 {
-  "name": "quant-spider",
+  "name": "quant-workbench",
   "version": "2.0.0",
-  "description": "真实行情量化看板（数据源 / 指标 / 策略 / 回测 / 模拟盘 / 自动交易）+ 原 prompt-spider-ui 的 Canvas 2D 蜘蛛过程可视化与 MCP 实时展示。零第三方依赖。",
+  "description": "A 股量化工作台：全市场选股（三层漏斗）+ AI 排序 + 市场云图 + 决策驾驶舱 + 回测 + 模拟盘 + AI 组合。零第三方前端依赖。",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/youdoufu-shuai/quant-spider.git"
   },
-  "bugs": { "url": "https://github.com/youdoufu-shuai/quant-spider/issues" },
+  "bugs": {
+    "url": "https://github.com/youdoufu-shuai/quant-spider/issues"
+  },
   "homepage": "https://github.com/youdoufu-shuai/quant-spider#readme",
   "type": "module",
   "scripts": {
-    "start": "node server.mjs",
-    "quant": "node quant/server.mjs",
-    "test": "node --test tests/body-motion.test.mjs tests/model.test.mjs tests/motion.test.mjs tests/probes.test.mjs tests/session.test.mjs tests/hub.test.mjs tests/live-ui.test.mjs",
-    "test:mcp": "npm --prefix mcp test",
+    "start": "node quant/server.mjs",
+    "test": "node tools/run-tests.mjs --offline",
+    "test:all": "node tools/run-tests.mjs",
     "test:quant": "python quant/indicators.py --selftest && python quant/backtest.py --selftest && python quant/paper.py --selftest && python quant/paper_live.py --selftest && python quant/autotrader.py --selftest && python quant/datasource.py --selftest && python quant/symbols.py --selftest"
   },
   "keywords": [
-    "quant", "trading", "backtest", "paper-trading", "technical-analysis",
-    "a-share", "cryptocurrency", "canvas", "visualization", "mcp"
+    "quant",
+    "trading",
+    "backtest",
+    "paper-trading",
+    "technical-analysis",
+    "a-share",
+    "screener",
+    "heatmap",
+    "ai"
   ],
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20"
+  }
 }

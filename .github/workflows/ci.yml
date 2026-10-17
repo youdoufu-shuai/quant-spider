@@ -1,5 +1,5 @@
 # ============================================================================
-#  quant-spider CI
+#  quant-workbench CI
 # ----------------------------------------------------------------------------
 #  触发：push 到 main + 所有 pull_request
 #  矩阵：ubuntu-latest × Node 20 / 22，Python 固定 3.12
@@ -19,11 +19,6 @@
 #     .gitignore 排除 —— 干净检出时必然不存在，所以 CI 里每次都是「首次」。
 #     这属于外部服务可用性，不是代码回归，不该阻塞合并。
 #     本地想严格判定：node tools/run-tests.mjs --strict
-#
-#  3) mcp/tests/protocol.test.mjs 也被排除在阻塞之外。
-#     它依赖 @modelcontextprotocol/server + zod（要 npm 安装），测试内部还会再跑一次
-#     「干净安装」。本机实测（沙箱里 npm 不在 PATH 上）：3 个用例 2 通过 / 1 失败，
-#     失败原因正是 Clean MCP install failed。既慢又依赖网络，同样不阻塞。
 #
 #  4) 另一个工作流正在写 quant/tests/（独立测试套件，自带 run.py 入口）。
 #     它不在本次改动范围内、最终布局未知，所以只做「存在就跑、没有就跳过、
@@ -72,7 +67,7 @@ jobs:
       - name: 安装 Python 依赖（仅 numpy）
         run: python -m pip install --disable-pip-version-check --no-input -r requirements-dev.txt
 
-      # 所有 .mjs（含 mcp/ 与 tools/）+ app/*.html、quant/web/*.html 里的内联
+      # 所有 .mjs（tools/）+ quant/web/*.html 里的内联
       # <script type="module">。内联脚本走 `node --check --input-type=module -`
       # 从 stdin 读，不落临时文件。
       - name: 语法检查
