@@ -50,15 +50,15 @@ const easeOut = t => 1 - Math.pow(1 - t, 3);
 
 const C = {
   // 亮色主题：canvas 底色是白卡片，文字/线条都要在白底上够深
-  bg: '#ffffff', panel: '#ffffff', border: '#e3e6ea',
-  muted: '#6b7280', text: '#1a1d21', dim: '#7b838e',
-  bull: '#d92b3f',      // 看多（红涨）
-  bear: '#12a06a',      // 看空
-  flat: '#9aa1ab',
-  accent: '#d6336c',    // 强调 / 阈值线
-  ok: '#12a06a',
-  warn: '#b8860b',
-  rule: 'rgba(26,29,33,.22)',   // 零线/合计线（白底上用深色半透明）
+  bg: '#ffffff', panel: '#ffffff', border: '#e4e7ea',
+  muted: '#737a82', text: '#16181c', dim: '#9aa1a9',
+  bull: '#c0322a',      // 看多（红涨）
+  bear: '#1c6e56',      // 看空
+  flat: '#9aa1a9',
+  accent: '#c0322a',    // 强调 / 阈值线
+  ok: '#1c6e56',
+  warn: '#8a6100',
+  rule: 'rgba(22,24,28,.18)',   // 零线/合计线（白底上用深色半透明）
 };
 
 // 动画阶段（秒）。总长约 2.6s，比上一版的 4s 短 ——
@@ -90,7 +90,7 @@ export class DecisionCockpit {
     // 行数随标的变（指标未就绪的因子不画），所以动态算。
     const nContrib = this.prep ? this.prep.contrib.rows.length : 6;
     const nGate = this.prep ? this.prep.gate.rows.length : 6;
-    const TITLE_H = 30;                          // 标题行占高（含空隙）
+    const TITLE_H = 4;                           // 不画标题了，只留一点上边距
     const contribH = TITLE_H + nContrib * 30 + 26;   // 标题 + 行 + 合计线
     const gateH = TITLE_H + nGate * 24 + 24;
     const h = Math.max(160, Math.round(10 + Math.max(contribH, gateH) + 10));
@@ -147,10 +147,11 @@ export class DecisionCockpit {
     const maxAbs = Math.max(...present.map(f => Math.abs(share(f))), 0.001);
     const sorted = [...present].sort((a, b) => Math.abs(share(b)) - Math.abs(share(a)));
 
-    const colW = (w - padX * 2) * 0.62;       // 瀑布占左边 62%
-    const gap = 22;
+    // 瀑布占 56%，留够间距给右边的风控闸门 —— 62% 时两者会挤在一起
+    const colW = (w - padX * 2) * 0.56;
+    const gap = 56;
     const rowH = 30;
-    const TITLE_H = 30;                       // 标题占一行 + 空隙
+    const TITLE_H = 4;                        // 不画标题了，只留上边距
     const contrib = {
       x: padX, y: topY, w: colW, rowH,
       rows: sorted.map((f, i) => {
@@ -204,7 +205,7 @@ export class DecisionCockpit {
 
     if (!this.data) {
       c.fillStyle = C.muted;
-      c.font = '11px Consolas, monospace';
+      c.font = '11px ';
       c.fillText('等待决策数据…', 18, 30);
       return;
     }
@@ -232,9 +233,8 @@ export class DecisionCockpit {
   // ══════════════════════════════════════════════════════════
   _drawContrib(c, p, T, W) {
     const g = p.contrib;
-    this._text(c, '每个因子对分数的实际贡献', g.x, g.y + 13, C.text, 11.5, 'left', true);
-    this._text(c, '条越长影响越大 · 值为 贡献÷总权重（可直接相加得分数）',
-               g.x + 206, g.y + 13, C.muted, 9.5);
+    // 不画标题 —— 外层 HTML 区块已经写了「为什么是这个结论」。
+    // 画布里重复一遍，等于同一句话说两遍，还白占一行高度。
 
     // 零线：所有条从这里向左右长
     const labelW = 74, valW = 104;
@@ -302,10 +302,8 @@ export class DecisionCockpit {
     if (appear <= 0.01) return;
     c.globalAlpha = appear;
 
-    this._text(c, '风控闸门', g.x, g.y + 13, C.text, 11.5, 'left', true);
+    // 同样不画标题（外层区块已经写了「风控闸门」）
     const fired = g.rows.filter(r => r.fired).length;
-    this._text(c, fired ? `${fired} 个触发` : '全部守备中',
-               g.x + 68, g.y + 13, fired ? C.bull : C.muted, 9.5);
 
     g.rows.forEach(r => {
       const col = r.fired ? C.bull : C.ok;
@@ -325,7 +323,7 @@ export class DecisionCockpit {
 
   // ── 工具 ──────────────────────────────────────────────
   _text(c, v, x, y, color, size = 10, align = 'left', bold = false) {
-    c.font = `${bold ? 700 : 400} ${size}px Consolas, "Cascadia Code", monospace`;
+    c.font = `${bold ? 700 : 400} ${size}px `;
     c.fillStyle = color;
     c.textAlign = align;
     c.textBaseline = 'alphabetic';
@@ -334,7 +332,7 @@ export class DecisionCockpit {
   }
 
   _width(c, v, size, bold) {
-    c.font = `${bold ? 700 : 400} ${size}px Consolas, "Cascadia Code", monospace`;
+    c.font = `${bold ? 700 : 400} ${size}px `;
     return c.measureText(String(v)).width;
   }
 

@@ -3,94 +3,41 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-<title>专业图表 · Pro Chart</title>
-<style>
-  :root{
-    /* 亮色主题：白底 + 浅灰分隔 + 深色文字 */
-    --bg:#f5f6f8;--panel:#ffffff;--panel2:#fafbfc;--border:#e3e6ea;
-    --text:#1a1d21;--muted:#6b7280;--accent:#d6336c;
-    --up:#d92b3f;--down:#12a06a;--warn:#b8860b;--ok:#12a06a;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--text);
-    font:12px/1.6 Consolas,"Cascadia Code",ui-monospace,monospace;
-    -webkit-tap-highlight-color:transparent}
-  a{color:var(--accent);text-decoration:none}
-
-  #top{display:flex;align-items:center;gap:9px;padding:8px 13px;flex-wrap:wrap;
-    border-bottom:1px solid var(--border);background:var(--panel);position:sticky;top:0;z-index:30}
-  #top h1{margin:0;font-size:12px;letter-spacing:.14em;font-weight:400;white-space:nowrap}
-  .sub{color:var(--accent);font-size:9px;letter-spacing:.1em}
-  select,input,button{background:#fff;color:var(--text);border:1px solid var(--border);
-    padding:4px 7px;font:inherit;font-size:11px;border-radius:3px}
-  input::placeholder{color:var(--muted)}
-  select:focus,input:focus,button:focus{outline:none;border-color:var(--accent)}
-  button{cursor:pointer}
-  button:hover:not(:disabled){border-color:var(--accent)}
-  button:disabled{opacity:.4;cursor:not-allowed}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-  .spacer{flex:1}
-  .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:9px;
-    border:1px solid var(--border);font-size:10px;color:var(--muted);white-space:nowrap}
-  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
-  .dot.err{background:var(--up)}
-  .dot.idle{background:var(--muted)}
-
-  #wrap{padding:10px 13px 40px;display:grid;gap:10px;max-width:2000px;margin:0 auto}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;min-width:0;
-    box-shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.05)}
-  .card>h2{margin:0;padding:6px 11px;font-size:10px;font-weight:400;color:var(--muted);
-    letter-spacing:.08em;border-bottom:1px solid var(--border);
-    display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
-  .card .body{padding:8px 11px}
-
-  /* 图表容器必须 position:relative，tooltip 才能正确定位 */
-  .chartbox{position:relative;padding:5px 0 0}
-  canvas{display:block;width:100%}
-
-  .legend{display:flex;gap:11px;flex-wrap:wrap;font-size:10px;color:var(--muted);
-    padding:3px 11px 6px}
-  .legend i{display:inline-block;width:9px;height:2px;vertical-align:middle;margin-right:4px}
-
-  .statrow{display:flex;gap:13px;flex-wrap:wrap;font-size:11px;padding:0 11px 7px}
-  .statrow b{font-weight:400;font-variant-numeric:tabular-nums}
-
-  table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #eef0f3;white-space:nowrap}
-  th{color:var(--muted);font-weight:400;font-size:10px}
-  th:first-child,td:first-child{text-align:left}
-  td.num{font-variant-numeric:tabular-nums}
-  tr.sel{background:#eef2f7}
-  tr:hover{background:#f7f9fb;cursor:pointer}
-  .tablewrap{overflow-x:auto}
-
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
-  label.f{display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--muted)}
-  .note{color:var(--muted);font-size:10px;line-height:1.8;padding:8px 11px;
-    background:#fafbfc;border-left:2px solid var(--warn)}
-  .note.ok{border-left-color:var(--ok)}
-  #err{display:none;margin:0 13px;padding:9px 12px;border:1px solid var(--up);
-    border-radius:4px;color:#b02535;background:#fdf2f3;white-space:pre-wrap;font-size:11px}
-  .warn-item{color:var(--warn);font-size:11px;padding:2px 0}
-  .up{color:var(--up)} .dn{color:var(--down)} .wn{color:var(--warn)} .mut{color:var(--muted)}
-  .badge{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;
-    border:1px solid currentColor}
-  #bar{height:2px;background:var(--accent);width:0;transition:width .2s}
-</style>
+<title>专业图表 · 量化工作台</title>
+<link rel="stylesheet" href="/theme.css" />
+  <style>
+    /* 本页专属 */
+    #wrap { grid-template-columns: minmax(0, 1fr); }
+    #bar { display: flex; flex-wrap: wrap; gap: 14px; align-items: baseline;
+           padding: 0 var(--gutter) 12px; max-width: var(--maxw); margin: 0 auto;
+           font-size: var(--fs-label); color: var(--muted); }
+    .statrow { display: flex; flex-wrap: wrap; gap: 24px; align-items: baseline;
+               padding-top: 8px; }
+    .statrow b { font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink); }
+    #cvMain { height: 380px; }
+    #cvMacd { height: 120px; }
+    #cvOsc { height: 110px; }
+  </style>
 </head>
 <body>
 
-<div id="top">
-  <h1>PRO CHART</h1>
-  <div class="sub">专业图表</div>
-  <span class="pill"><span class="dot idle" id="dot"></span><span id="status">加载中…</span></span>
-  <span class="spacer"></span>
-  <a href="/">看板</a>
-  <a href="/decision.html">决策驾驶舱</a>
-  <a href="/screen.html">选股</a>
-  <a href="/paper.html">模拟盘</a>
-  <a href="http://127.0.0.1:4317/" target="_blank" title="上游 Prompt Spider 的美术查看器（蜘蛛动画）">美术 ↗</a>
-</div>
+<header class="masthead">
+    <h1 class="brand">专业图表</h1>
+    <span class="where">十字光标 · 缩放平移 · 参数优化</span>
+    <div class="meta">
+      <span><span class="dot idle" id="dot"></span><span id="status">加载中…</span></span>
+    </div>
+  </header>
+
+  <nav class="navbar">
+    <a href="/">看板</a>
+    <a href="/screen.html">选股</a>
+    <a href="/decision.html">决策驾驶舱</a>
+    <a href="/pro.html" class="here">专业图表</a>
+    <a href="/paper.html">模拟盘</a>
+    <a href="http://127.0.0.1:4317/live" target="_blank">Agent 实时面板</a>
+    <a href="http://127.0.0.1:4317/" target="_blank">美术查看器</a>
+  </nav>
 <div id="err"></div>
 <div id="bar"></div>
 

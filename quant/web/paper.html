@@ -3,116 +3,80 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>模拟盘 · Paper Trading</title>
-<style>
-  :root{
-    /* 亮色主题：白底 + 浅灰分隔 + 深色文字 */
-    --bg:#f5f6f8;--panel:#ffffff;--panel2:#fafbfc;--border:#e3e6ea;
-    --text:#1a1d21;--muted:#6b7280;--accent:#d6336c;
-    --up:#d92b3f;--down:#12a06a;--warn:#b8860b;--ok:#12a06a;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--text);
-    font:12px/1.6 Consolas,"Cascadia Code",ui-monospace,monospace}
-  a{color:var(--accent);text-decoration:none}
-  #top{display:flex;align-items:center;gap:12px;padding:11px 16px;
-    border-bottom:1px solid var(--border);background:var(--panel);flex-wrap:wrap}
-  #top h1{margin:0;font-size:13px;letter-spacing:.16em;font-weight:400}
-  .sub{color:var(--accent);font-size:10px;letter-spacing:.12em}
-  select,input,button{background:#fff;color:var(--text);border:1px solid var(--border);
-    padding:5px 8px;font:inherit;font-size:11px;border-radius:3px}
-  input::placeholder,textarea::placeholder{color:var(--muted)}
-  select:focus,input:focus,textarea:focus,button:focus{outline:none;border-color:var(--accent)}
-  input[type=number]{width:110px}
-  button{cursor:pointer}
-  button:hover:not(:disabled){border-color:var(--accent)}
-  button:disabled{opacity:.4;cursor:not-allowed}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-  button.buy{background:var(--up);border-color:var(--up);color:#fff;font-weight:700}
-  button.sell{background:var(--down);border-color:var(--down);color:#fff;font-weight:700}
-  button.on{background:var(--ok);border-color:var(--ok);color:#fff}
-  .spacer{flex:1}
-  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:10px;
-    border:1px solid var(--border);font-size:10px;color:var(--muted)}
-  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
-  .dot.err{background:var(--up)}
-  .dot.idle{background:var(--muted)}
-  #wrap{padding:13px 16px 50px;display:grid;gap:13px;grid-template-columns:370px 1fr}
-  @media (max-width:1150px){#wrap{grid-template-columns:1fr}}
-  .col{display:grid;gap:13px;align-content:start}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;
-    box-shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.05)}
-  .card>h2{margin:0;padding:8px 12px;font-size:11px;font-weight:400;color:var(--muted);
-    letter-spacing:.08em;border-bottom:1px solid var(--border);display:flex;
-    justify-content:space-between;align-items:center;gap:8px}
-  .card .body{padding:11px 12px}
-  table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{text-align:right;padding:4px 6px;border-bottom:1px solid #eef0f3;white-space:nowrap}
-  th{color:var(--muted);font-weight:400;font-size:10px}
-  th:first-child,td:first-child{text-align:left}
-  .mut{color:var(--muted)} .up{color:var(--up)} .dn{color:var(--down)} .wn{color:var(--warn)} .ok{color:var(--ok)}
-  .big{font-size:26px;line-height:1.15}
-  .kv{display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:11px}
-  .kv .k{color:var(--muted)}
-  .kv .v{text-align:right}
-  .row{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
-  .row.tight{gap:5px}
-  label.f{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--muted)}
-  canvas{display:block;width:100%}
-  .sess{display:flex;justify-content:space-between;align-items:center;gap:8px;
-    padding:7px 9px;border-bottom:1px solid #eef0f3;cursor:pointer}
-  .sess:hover{background:#f7f9fb}
-  .sess.cur{background:#eef2f7;border-left:2px solid var(--accent)}
-  .sess .nm{font-size:11px}
-  .sess .meta{color:var(--muted);font-size:10px}
-  .tabs{display:flex;gap:0;border-bottom:1px solid var(--border)}
-  .tabs button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;
-    padding:7px 13px;font-size:11px;color:var(--muted)}
-  .tabs button.act{color:var(--text);border-bottom-color:var(--accent)}
-  .scroll{max-height:280px;overflow:auto}
-  .note{color:var(--muted);font-size:10px;line-height:1.75;padding:8px 10px;
-    background:#fafbfc;border-left:2px solid var(--warn);margin-top:9px}
-  .note b{color:var(--warn)}
-  #err{display:none;margin:0 16px;padding:9px 12px;border:1px solid var(--up);
-    border-radius:4px;color:#b02535;background:#fdf2f3;font-size:11px;white-space:pre-wrap}
-  .toast{position:fixed;right:16px;bottom:16px;background:#fff;
-    border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:4px;
-    box-shadow:0 6px 20px rgba(16,24,40,.14);
-    padding:10px 14px;font-size:11px;max-width:460px;z-index:99;display:none}
-  #empty{color:var(--muted);padding:26px 8px;text-align:center;line-height:2}
-
-  /* 标的选择器：A 股 8265 只、加密 511 对，塞进 <select> 会卡死浏览器，
-     所以常用项做成快捷标签，其余走搜索。 */
-  .results{max-height:190px;overflow:auto;margin-top:8px;display:none}
-  .results.on{display:block}
-  .results .it{display:flex;justify-content:space-between;gap:8px;padding:5px 8px;
-    border:1px solid transparent;border-bottom:1px solid #eef0f3;cursor:pointer;font-size:11px}
-  .results .it:hover{background:#f2f5f8;border-color:var(--border)}
-  .results .it b{font-weight:400}
-  .results .it .px{color:var(--muted);font-size:10px;white-space:nowrap}
-  .results .it .px i{font-style:normal}
-  .picked{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
-  .chip{padding:3px 8px;border:1px solid var(--border);border-radius:10px;
-    font-size:10px;color:var(--muted);cursor:pointer}
-  .chip:hover{border-color:var(--accent);color:var(--text)}
-  .chip.cur{border-color:var(--accent);color:var(--text);background:#fdf2f6}
-  .selinfo{margin-top:7px;font-size:10px;color:var(--muted)}
-  .selinfo b{color:var(--text);font-weight:400}
-</style>
+<title>模拟盘 · 量化工作台</title>
+<link rel="stylesheet" href="/theme.css" />
+  <style>
+      /* 本页专属：两栏 —— 左边操作区（建仓/下单/自动交易），右边看结果（总览/曲线/明细）。
+         ⚠️ 第一版按三栏写，但这页只有 2 个 .col，第三栏永远是空的。 */
+      #wrap { grid-template-columns: minmax(0, 330px) minmax(0, 1fr);
+              gap: 44px; align-items: start; }
+      @media (max-width: 1180px) { #wrap { grid-template-columns: minmax(0, 1fr); } }
+      /* 标的候选池很长（511 个交易对），限高免得把左栏撑到几千像素 */
+      .picked { max-height: 172px; overflow: auto; }
+    /* ⚠️ 下面四条曾被一次按行替换误删，别再删 ——
+       没有它们左栏的各个区块会挤成一团、滚动区也会撑破页面。 */
+    .col { display: grid; gap: 30px; min-width: 0; }
+    .col > * { min-width: 0; }
+    .row.tight { gap: 8px; }
+    .scroll { max-height: 380px; overflow: auto; }
+    /* 账户列表：行式，不是卡片式 */
+    .sess {
+      padding: 9px 0; border-bottom: 1px solid var(--rule);
+      cursor: pointer; font-size: var(--fs-small);
+    }
+    .sess:hover { background: var(--paper-soft); }
+    .sess.cur { font-weight: 600; }
+    .sess.cur::before { content: ""; display: inline-block; width: 3px; height: 11px;
+                        background: var(--ink); vertical-align: -1px; margin-right: 8px; }
+    .sess .nm { display: block; }
+    .sess .meta { display: block; color: var(--muted); font-size: var(--fs-label);
+                  font-variant-numeric: tabular-nums; margin-top: 1px; }
+    /* 买卖按钮：涨红跌青，这是全站唯一用底色区分的控件 —— 因为方向必须一眼分清 */
+    button.buy { color: var(--up); border-color: var(--up); }
+    button.buy:hover { background: var(--up); color: #fff; }
+    button.sell { color: var(--down); border-color: var(--down); }
+    button.sell:hover { background: var(--down); color: #fff; }
+    button.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+    /* 账户读数 */
+    .big { font-size: var(--fs-big); font-weight: 600;
+           font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+    .kv { display: flex; justify-content: space-between; align-items: baseline;
+          gap: 14px; padding: 4px 0; border-bottom: 1px solid var(--rule);
+          font-size: var(--fs-small); }
+    .kv:last-child { border-bottom: none; }
+    .kv .k { color: var(--muted); font-size: var(--fs-label); }
+    .kv .v { font-variant-numeric: tabular-nums; font-weight: 500; }
+    .tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--rule); margin-bottom: 14px; }
+    .tabs button {
+      border: none; border-bottom: 2px solid transparent; border-radius: 0;
+      background: none; padding: 6px 0 8px; margin-bottom: -1px;
+      color: var(--muted); font-size: var(--fs-small);
+    }
+    .tabs button:hover { color: var(--ink); border-color: transparent; }
+    .tabs button.act { color: var(--ink); font-weight: 600; border-bottom-color: var(--ink); }
+    .selinfo { font-size: var(--fs-label); color: var(--muted); margin-top: 6px; }
+    .selinfo b { color: var(--ink); font-weight: 500; }
+  </style>
 </head>
 <body>
 
-<div id="top">
-  <h1>PAPER TRADING</h1>
-  <div class="sub">模拟盘 · 纸上交易</div>
-  <span class="pill"><span class="dot idle" id="dot"></span><span id="status">未选择账户</span></span>
-  <span class="spacer"></span>
-  <a href="/">量化看板</a>
-  <a href="/pro.html">专业图表</a>
-  <a href="/decision.html">决策驾驶舱</a>
-  <a href="/screen.html">选股</a>
-  <a href="http://127.0.0.1:4317/" target="_blank" title="上游 Prompt Spider 的美术查看器（蜘蛛动画）">美术查看器 ↗</a>
-</div>
+<header class="masthead">
+    <h1 class="brand">模拟盘</h1>
+    <span class="where">手动下单 · 自动交易 · 账户持久化</span>
+    <div class="meta">
+      <span><span class="dot idle" id="dot"></span><span id="status">未选择账户</span></span>
+    </div>
+  </header>
+
+  <nav class="navbar">
+    <a href="/">看板</a>
+    <a href="/screen.html">选股</a>
+    <a href="/decision.html">决策驾驶舱</a>
+    <a href="/pro.html">专业图表</a>
+    <a href="/paper.html" class="here">模拟盘</a>
+    <a href="http://127.0.0.1:4317/live" target="_blank">Agent 实时面板</a>
+    <a href="http://127.0.0.1:4317/" target="_blank">美术查看器</a>
+  </nav>
 <div id="err"></div>
 
 <div id="wrap">
@@ -627,7 +591,7 @@ function onProviderChange() {
   const dl = $('aiModelList');
   dl.innerHTML = (prov.models || []).map(m => `<option value="${m}">`).join('');
   aiResult('info', `<b>${prov.label}</b>：${prov.note}`
-    + (prov.keyUrl ? `　<a href="${prov.keyUrl}" target="_blank" rel="noopener">获取 API Key →</a>` : ''));
+    + (prov.keyUrl ? `　<a href="${prov.keyUrl}" target="_blank" rel="noopener">获取 API Key</a>` : ''));
 }
 
 async function loadAI() {

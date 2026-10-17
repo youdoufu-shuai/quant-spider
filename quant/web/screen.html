@@ -3,132 +3,109 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>选股 · Stock Screener</title>
-<style>
-  :root{
-    /* 亮色主题，与量化看板保持一致 */
-    --bg:#f5f6f8; --panel:#ffffff; --panel2:#fafbfc; --border:#e3e6ea;
-    --text:#1a1d21; --muted:#6b7280; --dim:#9aa1ab; --accent:#d6336c;
-    --up:#d92b3f; --down:#12a06a; --warn:#b8860b; --ok:#0e8f68;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--text);
-    font:12px/1.6 Consolas,"Cascadia Code",ui-monospace,monospace}
-  a{color:var(--accent);text-decoration:none}
-
-  #top{display:flex;align-items:center;gap:14px;padding:12px 18px;
-    border-bottom:1px solid var(--border);background:var(--panel);
-    flex-wrap:wrap;position:sticky;top:0;z-index:30}
-  #top h1{margin:0;font-size:13px;letter-spacing:.16em;font-weight:400}
-  #top .sub{color:var(--accent);font-size:10px;letter-spacing:.12em}
-  .spacer{flex:1}
-  .pill{display:inline-flex;align-items:center;gap:6px;padding:3px 9px;border-radius:10px;
-    border:1px solid var(--border);font-size:10px;color:var(--muted);background:var(--panel2)}
-  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
-
-  select,input,button{background:#fff;color:var(--text);border:1px solid var(--border);
-    padding:5px 9px;font:inherit;font-size:11px;border-radius:3px}
-  input::placeholder{color:var(--muted)}
-  select:focus,input:focus,button:focus{outline:none;border-color:var(--accent)}
-  button{cursor:pointer}
-  button:hover{border-color:var(--accent)}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-  button:disabled{opacity:.5;cursor:not-allowed}
-
-  #wrap{padding:14px 18px 50px;display:grid;gap:12px;max-width:2200px;margin:0 auto}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:5px;
-    min-width:0;box-shadow:0 1px 2px rgba(16,24,40,.04)}
-  .card>h2{margin:0;padding:9px 14px;font-size:10.5px;font-weight:400;color:var(--muted);
-    letter-spacing:.08em;border-bottom:1px solid var(--border);
-    display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
-  .card .body{padding:12px 14px}
-
-  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
-  label.f{display:flex;flex-direction:column;gap:3px;font-size:10px;color:var(--muted)}
-
-  /* 策略卡片 */
-  .strategies{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
-  .st{border:1px solid var(--border);border-radius:4px;padding:11px 13px;cursor:pointer;
-    background:var(--panel2);transition:border-color .12s,background .12s}
-  .st:hover{border-color:var(--accent)}
-  .st.cur{border-color:var(--accent);background:#fdf2f6}
-  .st b{display:block;font-size:13px;font-weight:700;margin-bottom:3px}
-  .st .d{color:var(--muted);font-size:10.5px;line-height:1.5;margin-bottom:7px}
-  .st .c{color:var(--dim);font-size:9.5px;line-height:1.6}
-
-  /* 漏斗 */
-  .funnel{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
-  .fn{flex:1;min-width:120px;padding:12px 14px;border-right:1px solid var(--border)}
-  .fn:last-child{border-right:none}
-  .fn .n{font-size:23px;font-weight:700;line-height:1.15}
-  .fn .l{color:var(--muted);font-size:10px;margin-top:2px}
-  .fn .s{color:var(--dim);font-size:9.5px;margin-top:4px}
-  .rej{padding:10px 14px;border-top:1px solid var(--border);background:var(--panel2);
-    color:var(--muted);font-size:10.5px;line-height:1.9}
-  .rej i{font-style:normal;color:var(--text);font-weight:700}
-
-  table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{text-align:right;padding:6px 9px;border-bottom:1px solid #eef1f4;white-space:nowrap}
-  th{color:var(--muted);font-weight:400;font-size:10px;background:var(--panel2);
-    position:sticky;top:0}
-  th:first-child,td:first-child{text-align:left}
-  tbody tr:hover{background:#fafbfc}
-  td.num{font-variant-numeric:tabular-nums}
-  .tablewrap{overflow:auto;max-height:640px}
-  .up{color:var(--up)}.dn{color:var(--down)}.wn{color:var(--warn)}.ok{color:var(--ok)}
-  .mut{color:var(--muted)}.dim{color:var(--dim)}
-  .bar{display:inline-block;height:6px;border-radius:3px;vertical-align:middle}
-  .tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9.5px;
-    background:var(--panel2);border:1px solid var(--border);color:var(--muted)}
-
-  /* AI 结果 */
-  .picks{display:grid;gap:10px;padding:12px 14px}
-  .pick{border:1px solid var(--border);border-radius:4px;padding:12px 14px;background:var(--panel2)}
-  .pick .hd{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:7px}
-  .pick .rk{font-size:18px;font-weight:700;color:var(--accent);min-width:22px}
-  .pick .nm{font-size:14px;font-weight:700}
-  .pick .cd{color:var(--muted);font-size:11px}
-  .pick .cf{margin-left:auto;font-size:11px}
-  .pick .th{font-size:12px;line-height:1.7;margin-bottom:7px}
-  .pick .meta{display:grid;grid-template-columns:76px 1fr;gap:3px 10px;
-    font-size:10.5px;line-height:1.7}
-  .pick .meta .k{color:var(--muted)}
-  .pick .meta .v{color:var(--text)}
-
-  .note{padding:11px 14px;border-radius:4px;font-size:11px;line-height:1.85;
-    background:#fdf2f6;border-left:3px solid var(--accent);color:var(--muted)}
-  .note b{color:var(--text)}
-  .note.warn{background:#fdf8ec;border-left-color:var(--warn)}
-  .note.ok{background:#eefaf4;border-left-color:var(--ok)}
-
-  #err{display:none;margin:0 18px 12px;padding:10px 14px;border:1px solid var(--up);
-    border-radius:4px;color:var(--up);background:#fdf2f4;white-space:pre-wrap}
-  #busy{display:none;padding:14px 18px;color:var(--muted);font-size:11.5px}
-  #busy.on{display:block}
-  .spin{display:inline-block;width:11px;height:11px;border:2px solid var(--border);
-    border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;
-    vertical-align:-1px;margin-right:7px}
-  @keyframes sp{to{transform:rotate(360deg)}}
-
-  @media (max-width:900px){
-    #wrap{padding:10px 11px 40px}
-    .fn{min-width:90px;padding:9px 11px}
-    .fn .n{font-size:18px}
-  }
-</style>
+<title>选股 · 量化工作台</title>
+<link rel="stylesheet" href="/theme.css" />
+  <style>
+    /* 本页专属 */
+    /* 策略选择：一行四个，用下划线指示当前，不用高亮底色块 */
+    .strategies {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 0 28px;
+    }
+    .st {
+      padding: 11px 0 12px;
+      border-bottom: 1px solid var(--rule);
+      border-left: 2px solid transparent;
+      cursor: pointer;
+      padding-left: 12px;
+    }
+    .st:hover { border-left-color: var(--rule-strong); }
+    .st.cur { border-left-color: var(--ink); }
+    .st b { display: block; font-size: var(--fs-body); font-weight: 600; margin-bottom: 3px; }
+    .st.cur b { color: var(--ink); }
+    .st .d { color: var(--muted); font-size: var(--fs-label); line-height: 1.65; margin-bottom: 6px; }
+    .st .c { color: var(--faint); font-size: var(--fs-label); line-height: 1.6; }
+    /* 漏斗：三个数字排成一句「5576 只 → 281 只 → 30 只」 */
+    .funnel { display: flex; align-items: baseline; gap: 0; flex-wrap: wrap; }
+    .fn { padding: 4px 26px 4px 0; margin-right: 26px;
+          border-right: 1px solid var(--rule); }
+    .fn:last-child { border-right: none; margin-right: 0; padding-right: 0; }
+    .fn .n { font-size: var(--fs-big); font-weight: 600;
+             font-variant-numeric: tabular-nums; letter-spacing: -0.015em;
+             line-height: 1.1; }
+    .fn .l { color: var(--muted); font-size: var(--fs-label); margin-top: 3px; }
+    .fn .s { color: var(--faint); font-size: var(--fs-label); margin-top: 1px; }
+    .rej { color: var(--muted); font-size: var(--fs-label); line-height: 1.9;
+           margin-top: 12px; max-width: 90ch; }
+    .rej i { font-style: normal; color: var(--ink); font-variant-numeric: tabular-nums; }
+    /* 行业分布：两列紧凑列表，条长表示只数 */
+    .sector-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 2px 40px;
+    }
+    .sector-row {
+      display: grid;
+      grid-template-columns: 76px minmax(0, 1fr) 26px;
+      gap: 10px;
+      align-items: center;
+      padding: 3px 0;
+      font-size: var(--fs-small);
+    }
+    .sector-name {
+      color: var(--ink-2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sector-bar { display: block; height: 6px; background: #f0f2f4; }
+    .sector-bar i { display: block; height: 100%; background: var(--ink-2); }
+    /* 行业分布条 */
+    .bar { display: inline-block; height: 8px; border-radius: 0; vertical-align: middle; }
+    /* AI 选中卡片 */
+    .picks { display: grid; gap: 0; }
+    .pick { padding: 14px 0 16px; border-bottom: 1px solid var(--rule); }
+    .pick:last-child { border-bottom: none; }
+    .pick .hd { display: flex; align-items: baseline; gap: 12px;
+                flex-wrap: wrap; margin-bottom: 6px; }
+    .pick .rk { font-size: var(--fs-body); font-weight: 600; color: var(--muted);
+                min-width: 16px; font-variant-numeric: tabular-nums; }
+    .pick .nm { font-size: var(--fs-body); font-weight: 600; }
+    .pick .cd { color: var(--muted); font-size: var(--fs-label);
+                font-variant-numeric: tabular-nums; }
+    .pick .cf { margin-left: auto; font-size: var(--fs-label); color: var(--muted); }
+    .pick .cf b { color: var(--ink); font-weight: 600; }
+    .pick .th { font-size: var(--fs-small); line-height: 1.75;
+                margin-bottom: 8px; max-width: 80ch; }
+    .pick .meta { display: grid; grid-template-columns: 74px minmax(0, 1fr);
+                  gap: 3px 14px; font-size: var(--fs-label); line-height: 1.7; }
+    .pick .meta .k { color: var(--muted); }
+    .pick .meta .v { color: var(--ink-2); }
+    #busy { display: none; color: var(--muted); font-size: var(--fs-small);
+            margin-top: 12px; }
+    #busy.on { display: block; }
+  </style>
 </head>
 <body>
 
-<div id="top">
-  <h1>STOCK SCREENER</h1>
-  <div class="sub">A 股选股</div>
-  <span class="pill"><span class="dot" id="dot"></span><span id="status">就绪</span></span>
-  <span class="spacer"></span>
-  <a href="/">看板</a>
-  <a href="/pro.html">专业图表</a>
-  <a href="/decision.html">决策驾驶舱</a>
-  <a href="/paper.html">模拟盘</a>
-</div>
+<header class="masthead">
+    <h1 class="brand">选股</h1>
+    <span class="where">全市场过滤 · 横截面排序 · AI 复核</span>
+    <div class="meta">
+      <span><span class="dot" id="dot"></span><span id="status">就绪</span></span>
+    </div>
+  </header>
+
+  <nav class="navbar">
+    <a href="/">看板</a>
+    <a href="/screen.html" class="here">选股</a>
+    <a href="/decision.html">决策驾驶舱</a>
+    <a href="/pro.html">专业图表</a>
+    <a href="/paper.html">模拟盘</a>
+    <a href="http://127.0.0.1:4317/live" target="_blank">Agent 实时面板</a>
+    <a href="http://127.0.0.1:4317/" target="_blank">美术查看器</a>
+  </nav>
 <div id="err"></div>
 
 <div id="wrap">
@@ -574,14 +551,18 @@ function renderSectors(d) {
   if (!keys.length) { $('sectorCard').style.display = 'none'; return; }
   $('sectorCard').style.display = 'block';
   const max = Math.max(...Object.values(s));
-  $('sectors').innerHTML = keys.map(k => `
-    <div style="display:grid;grid-template-columns:76px 1fr 28px;gap:9px;
-      align-items:center;margin:4px 0;font-size:11px">
-      <span>${esc(k)}</span>
-      <span class="bar" style="width:${(s[k] / max * 100).toFixed(0)}%;
-        background:${s[k] >= 2 ? 'var(--accent)' : 'var(--dim)'}"></span>
-      <span class="num mut">${s[k]}</span>
-    </div>`).join('');
+  // 行业分布是「补充信息」，不该占掉半屏 —— 两列紧凑排列，只列前 12 个。
+  // ⚠️ 第一版用 grid 三列 + inline-block 的条，条宽算出来是 0（看不见），
+  //    而且 18 个行业竖着排占了 400px。这里改成 flex 行 + 像素比例条。
+  $('sectors').innerHTML = `
+    <div class="sector-grid">${keys.slice(0, 12).map(k => `
+      <div class="sector-row">
+        <span class="sector-name">${esc(k)}</span>
+        <span class="sector-bar"><i style="width:${(s[k] / max * 100).toFixed(0)}%"></i></span>
+        <span class="num mut">${s[k]}</span>
+      </div>`).join('')}</div>
+    ${keys.length > 12 ? `<div class="mut" style="font-size:11px;margin-top:8px">
+      另外还有 ${keys.length - 12} 个行业，各 1 只</div>` : ''}`;
 }
 
 // ══════════════════════════════════════════════════════════

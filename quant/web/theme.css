@@ -1,0 +1,758 @@
+/* ═══════════════════════════════════════════════════════════════
+   量化工作台 · 共享设计系统
+
+   ═══════════════════════════════════════════════════════════════
+   设计方向：行情底稿
+   ═══════════════════════════════════════════════════════════════
+   这个工具的性质决定了它的视觉：**数字、真钱、每天看**。
+   所以设计上唯一的奢侈是「清晰的层级」和「对齐的数字」，
+   其余一律让位。
+
+   三个决定，都是从「不用什么」来的：
+
+   1. 不用卡片
+      圆角白卡 + 同一档阴影，是把任何内容都装进去的默认做法。
+      这里所有内容都在**同一张纸上**，靠留白和字号分层。
+      分组靠间距，不靠边框 —— 边框会把版面切成碎片。
+
+   2. 线只在表格里
+      表格的行分隔线**编码信息**（一行是一条记录），该有。
+      区块之间的横线只是装饰，去掉，用留白代替。
+
+   3. 红绿是唯一的饱和色
+      朱红（涨）和深青（跌）是这个行业约定，也是全站仅有的彩色。
+      链接用墨色加下划线，焦点用墨色描边 —— 不再引入第三种颜色。
+      这样视线只会被「涨了/跌了」吸引，这正是我们想要的。
+
+   ═══════════════════════════════════════════════════════════════
+   明确规避的 AI 生成痕迹
+   ═══════════════════════════════════════════════════════════════
+   · 全大写字母间距标题（STOCK SCREENER 那种）—— 中文界面里更没道理
+   · 中点连接的元信息（A · B · C）—— 改用逗号或分行，本来就更易读
+   · 箭头后缀链接（选股 →）—— 链接就是链接，不需要箭头提示可点
+   · 等宽字体做小标签 —— 等宽只在真正需要对齐数字的地方
+   · 统一圆角 + 统一阴影 —— 见上
+   · 装饰性渐变、发光、毛玻璃 —— 零
+
+   ═══════════════════════════════════════════════════════════════
+   字体策略
+   ═══════════════════════════════════════════════════════════════
+   全站一个家族（系统无衬线），中文优先命中苹方/微软雅黑。
+   数字用 tabular-nums 保证列对齐 —— 这是表格能读的前提。
+
+   不加载网络字体：这个工具在本地跑，多一个网络依赖就多一个
+   离线打不开的理由。系统字体在中文下的渲染质量已经足够。
+   ═══════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── 纸与墨 ── */
+  --paper: #ffffff;
+  --paper-soft: #f7f8f9;      /* 仅用于表头、输入框这类「凹下去」的地方 */
+  --ink: #16181c;
+  --ink-2: #3d4249;           /* 次级标题 */
+  --muted: #737a82;
+  --faint: #9aa1a9;           /* 占位、禁用 */
+  --rule: #e4e7ea;            /* 表格行线 */
+  --rule-strong: #cfd4d9;     /* 表头底线 */
+
+  /* ── 行情色（全站唯一饱和色）── */
+  --up: #c0322a;              /* 朱红：涨 / 看多 */
+  --down: #1c6e56;            /* 深青：跌 / 看空 */
+  --warn: #8a6100;            /* 提示：偏暗的黄褐，不抢红绿 */
+  --ok: #1c6e56;
+
+  /* ── 尺寸 ── */
+  --gutter: 28px;
+  --maxw: 1640px;
+  --radius: 3px;              /* 只给输入框和按钮这一档，其它一律方角 */
+
+  /* 字号阶梯：标题和标签拉开 3 倍，靠对比而不是靠装饰分层 */
+  --fs-readout: 42px;         /* 最重要的一两个数字 */
+  --fs-big: 26px;             /* 次级数字 */
+  --fs-title: 19px;           /* 页面标题 */
+  --fs-section: 13px;         /* 区块标题 */
+  --fs-body: 13px;
+  --fs-small: 11.5px;
+  --fs-label: 11px;
+
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 var(--fs-body)/1.6 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 数字一律等宽对齐 —— 表格能读的前提 */
+.num, td.num, input[type="number"] {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule-strong);
+  padding-bottom: 1px;
+}
+a:hover { border-bottom-color: var(--ink); }
+
+/* 键盘可达：用墨色轮廓，不引入新颜色 */
+:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+  border-radius: 1px;
+}
+
+::selection { background: #16181c; color: #fff; }
+
+/* ═══════════════════════════════════════════════════════════════
+   报头 —— 每页一致
+   ═══════════════════════════════════════════════════════════════
+   左边：产品名 + 当前页面。右边：日期和市场状态。
+   下面一条细线收口，然后就是内容 —— 不做大标题横幅。
+
+   ⚠️ 刻意不用全大写、不用字母间距。中文不需要这两样，
+      英文缩写的产品名也不需要喊出来。
+   ═══════════════════════════════════════════════════════════════ */
+.masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+  padding: 22px var(--gutter) 14px;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  flex-wrap: wrap;
+}
+.masthead .brand {
+  font-size: var(--fs-title);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  margin: 0;
+}
+.masthead .where {
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+.masthead .meta {
+  margin-left: auto;
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+.masthead .meta b {
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 状态点：只有三种状态，颜色即语义 */
+.dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  vertical-align: 1px;
+  margin-right: 6px;
+}
+.dot.warn { background: var(--warn); }
+.dot.err  { background: var(--up); }
+
+/* ═══════════════════════════════════════════════════════════════
+   导航行 —— 一行文字，不是标签塔
+   ═══════════════════════════════════════════════════════════════ */
+.navbar {
+  display: flex;
+  gap: 22px;
+  align-items: baseline;
+  padding: 0 var(--gutter) 14px;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-label);
+  flex-wrap: wrap;
+}
+.navbar a {
+  border-bottom: none;
+  color: var(--muted);
+}
+.navbar a:hover { color: var(--ink); }
+.navbar a.here { color: var(--ink); font-weight: 600; }
+
+/* ═══════════════════════════════════════════════════════════════
+   内容容器
+   ═══════════════════════════════════════════════════════════════ */
+.wrap, #wrap {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--gutter) var(--gutter) 72px;
+  display: grid;
+  gap: 36px;                  /* 区块之间靠留白分组，不画线 */
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   区块
+   ═══════════════════════════════════════════════════════════════
+   ⚠️ `.card` 这个名字保留（老标记里到处是），但它**不再是卡片**：
+      没有背景、没有边框、没有圆角、没有阴影。
+      只是一个带标题的区块。改样式不改结构，是为了不在 HTML 里
+      做大范围重命名 —— 那样容易把 JS 里引用的 id/class 弄坏。
+   ═══════════════════════════════════════════════════════════════ */
+.card {
+  background: none;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  min-width: 0;
+}
+.card > h2 {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 0;
+  border: none;
+  font-size: var(--fs-section);
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+/* 区块标题右侧的补充信息：小一号、次要色，不抢标题 */
+.card > h2 .mut,
+.card > h2 .warn {
+  font-size: var(--fs-label);
+  font-weight: 400;
+  color: var(--muted);
+}
+.card > h2 .warn { color: var(--warn); }
+.card > .body { padding: 0; }
+
+/* 区块内的小标题（表格前的说明等） */
+.subhead {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  margin: 0 0 10px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   读数块 —— 页面上最重要的数字
+   ═══════════════════════════════════════════════════════════════
+   不是「大数字 + 小标签 + 渐变」那套默认做法。
+   这里数字大是因为**它就是内容**，标签小到刚好能读。
+   ═══════════════════════════════════════════════════════════════ */
+.readout {
+  display: flex;
+  align-items: baseline;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+.readout .item { min-width: 0; }
+.readout .k {
+  display: block;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+.readout .v {
+  display: block;
+  font-size: var(--fs-readout);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.readout .v.sm { font-size: var(--fs-big); }
+.readout .u {
+  font-size: var(--fs-small);
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: 3px;
+}
+
+/* 涨跌色：只在数字上，不在容器上 */
+.up { color: var(--up); }
+.dn { color: var(--down); }
+.wn { color: var(--warn); }
+.ok { color: var(--ok); }
+.mut { color: var(--muted); }
+.dim { color: var(--faint); }
+
+/* ═══════════════════════════════════════════════════════════════
+   表格 —— 全站数据的主要载体
+   ═══════════════════════════════════════════════════════════════
+   行线编码「这是一条记录」，所以有。
+   表格不出边框、不画竖线 —— 竖线会和数字对齐打架。
+   表头粘顶，长表格滚动时列名还在。
+   ═══════════════════════════════════════════════════════════════ */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-small);
+}
+th, td {
+  text-align: right;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--paper);
+  color: var(--muted);
+  font-weight: 400;
+  font-size: var(--fs-label);
+  border-bottom: 1px solid var(--rule-strong);
+  text-align: right;
+}
+th:first-child, td:first-child { text-align: left; padding-left: 0; }
+th:last-child, td:last-child { padding-right: 0; }
+tbody tr:hover { background: var(--paper-soft); }
+tbody tr:last-child td { border-bottom: none; }
+td.num { font-variant-numeric: tabular-nums; }
+
+.tablewrap { overflow: auto; max-height: 640px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   表单
+   ═══════════════════════════════════════════════════════════════
+   输入框是唯一带圆角的东西 —— 它们确实是「可操作的控件」，
+   和纸面上的数据区分开是合理的。
+   ═══════════════════════════════════════════════════════════════ */
+select, input, button, textarea {
+  font: inherit;
+  font-size: var(--fs-small);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  padding: 5px 9px;
+}
+input::placeholder { color: var(--faint); }
+select:focus, input:focus, button:focus, textarea:focus {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+  border-color: var(--ink);
+}
+button { cursor: pointer; background: var(--paper); }
+button:hover { border-color: var(--ink); }
+button:disabled { color: var(--faint); border-color: var(--rule); cursor: not-allowed; }
+/* 主按钮：实心墨色。不用品牌色 —— 这个工具没有品牌色 */
+button.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+button.primary:hover { background: #000; border-color: #000; }
+button.primary:disabled { background: var(--faint); border-color: var(--faint); color: #fff; }
+
+/* 控件行 */
+.row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+label.f {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+.spacer { flex: 1; }
+
+/* ═══════════════════════════════════════════════════════════════
+   标签页 / 分段选择
+   ═══════════════════════════════════════════════════════════════
+   用下划线指示当前项，不用胶囊背景 —— 胶囊会把一行文字
+   变成一排彩色块，视觉噪音太大。
+   ═══════════════════════════════════════════════════════════════ */
+.tabs {
+  display: flex;
+  gap: 20px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+.tabs .tab {
+  padding: 7px 0 9px;
+  font-size: var(--fs-small);
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  border-radius: 0;
+}
+.tabs .tab:hover { color: var(--ink); }
+.tabs .tab.on {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--ink);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   状态标记
+   ═══════════════════════════════════════════════════════════════
+   极简：纯文字 + 一个色点。不做圆角胶囊、不做浅色底。
+   ═══════════════════════════════════════════════════════════════ */
+.tag {
+  display: inline-block;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  border: none;
+  background: none;
+  padding: 0;
+}
+.tag + .tag::before { content: "，"; color: var(--faint); }
+
+/* 状态药丸（页头用）：文字 + 点，不用底色 */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.kv { font-size: var(--fs-label); color: var(--muted); }
+
+/* ═══════════════════════════════════════════════════════════════
+   说明文字
+   ═══════════════════════════════════════════════════════════════
+   去掉浅色底 + 左边框那套。就用小字 + 缩进 + 左侧留白，
+   和正文同一个面，读起来是「注解」而不是「警告框」。
+   ═══════════════════════════════════════════════════════════════ */
+.note {
+  font-size: var(--fs-small);
+  line-height: 1.85;
+  color: var(--muted);
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  max-width: 78ch;
+}
+.note b, .note strong { color: var(--ink); font-weight: 600; }
+.note.warn, .note.ok {
+  background: none;
+  border-left: none;
+  padding: 0;
+}
+.note code {
+  font-family: inherit;
+  background: var(--paper-soft);
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 0.95em;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   画布容器
+   ═══════════════════════════════════════════════════════════════ */
+.chartbox { position: relative; }
+canvas { display: block; width: 100%; }
+
+/* ═══════════════════════════════════════════════════════════════
+   两栏 / 三栏布局
+   ═══════════════════════════════════════════════════════════════ */
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  gap: 36px;
+  align-items: start;
+}
+.split-3 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   错误条
+   ═══════════════════════════════════════════════════════════════ */
+#err {
+  display: none;
+  max-width: var(--maxw);
+  margin: 0 auto 18px;
+  padding: 0 var(--gutter);
+  color: var(--up);
+  font-size: var(--fs-small);
+  white-space: pre-wrap;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   加载态
+   ═══════════════════════════════════════════════════════════════ */
+.spin {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border: 1.5px solid var(--rule-strong);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: sp 0.7s linear infinite;
+  vertical-align: -1px;
+  margin-right: 7px;
+}
+@keyframes sp { to { transform: rotate(360deg); } }
+
+/* 减少动效偏好：这是无障碍底线，不是可选项 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   窄屏
+   ═══════════════════════════════════════════════════════════════ */
+@media (max-width: 1080px) {
+  .split, .split-3 { grid-template-columns: minmax(0, 1fr); gap: 28px; }
+  :root { --fs-readout: 34px; --fs-big: 22px; --gutter: 18px; }
+}
+@media (max-width: 720px) {
+  :root { --fs-readout: 28px; --gutter: 14px; --fs-title: 17px; }
+  .masthead { padding-top: 16px; }
+  th, td { padding: 6px 8px; }
+  /* 手机上表格横向滚动，不拆行 */
+  .tablewrap { max-height: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   兼容层 —— 老标记里的类名
+   ═══════════════════════════════════════════════════════════════
+   各页的 JS 会生成这些 class，重命名要同步改 JS，风险大于收益。
+   所以保留名字，只改定义 —— 名称是历史包袱，视觉是当下的。
+   ═══════════════════════════════════════════════════════════════ */
+
+/* 涨跌别名（老页面用 .pos/.neg） */
+.pos { color: var(--up); }
+.neg { color: var(--down); }
+
+/* 网格助手 */
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
+.grid2 > *, .grid3 > * { min-width: 0; }
+@media (max-width: 1180px) { .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); } }
+
+/* 表格选中行 */
+tr.sel { background: var(--paper-soft); }
+tr.sel td { font-weight: 600; }
+
+/* ═══════════════════════════════════════════════════════════════
+   实时报价块
+   ═══════════════════════════════════════════════════════════════
+   左边价格独占一栏（它回答「现在多少钱」），右边 OHLC 排成网格。
+   价格和涨跌额放在同一栏里上下排列 —— 它们是一件事的两个面，
+   分开排会让人先读到一个大数字、再去找它涨了还是跌了。
+
+   ⚠️ 第一版把涨跌额设成比价格还大，层级反了：眼睛先看到 -504，
+      再去找 81652 是什么。价格是主，涨跌是注。
+   ═══════════════════════════════════════════════════════════════ */
+.quote {
+  display: flex;
+  gap: 48px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  padding-bottom: 2px;
+}
+.quote .lead { display: flex; flex-direction: column; gap: 1px; }
+.quote .lead .name {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  margin-bottom: 3px;
+}
+.quote .lead .price {
+  font-size: var(--fs-readout);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+.quote .lead .chg {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  margin-top: 5px;
+}
+/* 右侧统计：两行网格，标签在上值在下，值一律等宽右对齐 */
+.quote .stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+  gap: 12px 24px;
+  flex: 1;
+  min-width: 280px;
+  padding-top: 3px;
+  border-top: 1px solid var(--rule);
+}
+.quote .kv { display: flex; flex-direction: column; gap: 1px; }
+.quote .kv span:first-child {
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-weight: 400;
+}
+.quote .kv b, .quote .kv span:last-child {
+  font-size: var(--fs-small);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 指标行：上边一条细线标记「一组读数」，不用小盒子 */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0;
+  border-top: 1px solid var(--rule);
+}
+.metric {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 10px 16px 10px 0;
+  border-right: 1px solid var(--rule);
+}
+.metric:last-child { border-right: none; }
+.metric .k { color: var(--muted); font-size: var(--fs-label); display: block; margin-bottom: 2px; }
+.metric .v {
+  font-size: var(--fs-big);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+/* 日志：时间戳等宽对齐，类型用字重区分而非彩色标签 */
+.log { max-height: 280px; overflow: auto; font-size: var(--fs-small); }
+.log > div {
+  display: flex; gap: 14px; padding: 5px 0;
+  border-bottom: 1px solid var(--rule); align-items: baseline;
+}
+.log > div:last-child { border-bottom: none; }
+.log .t { color: var(--muted); min-width: 132px; font-variant-numeric: tabular-nums; }
+.log .kind { min-width: 48px; color: var(--ink-2); }
+
+/* 图例 */
+.legend {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  font-size: var(--fs-label); color: var(--muted); margin-top: 8px;
+}
+.legend i { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 5px; }
+
+/* 取数失败时把整块数据标灰 —— 防止把过期数字当成当前值读 */
+#wrap.stale, .stale { opacity: 0.5; transition: opacity 0.2s; }
+/* ═══════════════════════════════════════════════════════════════
+   搜索候选列表（选股页、驾驶舱、图表页共用）
+   ═══════════════════════════════════════════════════════════════
+   浮层用一条细边 + 极淡阴影（浮层确实需要和下面的纸面区分开，
+   这是唯一允许有阴影的地方 —— 因为它真的是浮起来的）。
+   ═══════════════════════════════════════════════════════════════ */
+.results {
+  display: none;
+  margin-top: 8px;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  box-shadow: 0 6px 20px rgba(16, 24, 40, 0.07);
+  max-height: 240px;
+  overflow: auto;
+}
+.results.on { display: block; }
+.results .it {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--rule);
+  font-size: var(--fs-small);
+  cursor: pointer;
+  align-items: baseline;
+}
+.results .it:last-child { border-bottom: none; }
+.results .it:hover { background: var(--paper-soft); }
+.results .it b { font-weight: 500; }
+.results .it .px {
+  color: var(--muted);
+  font-size: var(--fs-label);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.results .it .px i { font-style: normal; color: var(--ink); }
+
+/* 已选标的 */
+.picked { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 2px 9px;
+  cursor: pointer;
+  white-space: nowrap;
+  background: none;
+}
+.chip:hover { border-color: var(--ink); color: var(--ink); }
+.chip.cur { border-color: var(--ink); color: var(--ink); font-weight: 600; }
+
+/* 空状态：不是「什么都没有」，是邀请用户做下一步 */
+#empty, .empty {
+  color: var(--muted);
+  font-size: var(--fs-small);
+  line-height: 1.9;
+  max-width: 60ch;
+}
+
+/* 操作反馈（保存/下单等） */
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: var(--fs-small);
+  padding: 9px 16px;
+  border-radius: 2px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.18s, transform 0.18s;
+  pointer-events: none;
+  z-index: 100;
+  max-width: 360px;
+}
+.toast.on { opacity: 1; transform: translateY(0); }
+
+/* 提示条（warn-item / badge） */
+.warn-item {
+  font-size: var(--fs-small);
+  color: var(--warn);
+  padding: 5px 0;
+  border-bottom: 1px solid var(--rule);
+}
+.badge {
+  display: inline-block;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: 0 6px;
+  margin-left: 8px;
+}

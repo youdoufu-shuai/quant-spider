@@ -466,7 +466,7 @@ export class Chart {
 
     if (!this.bars.length) {
       c.fillStyle = this.theme.text;
-      c.font = '11px Consolas, monospace';
+      c.font = '11px ';
       c.fillText('暂无数据', this.pad.l + 8, h / 2);
       return;
     }
@@ -516,7 +516,7 @@ export class Chart {
       c.restore();
       if (h.label) {
         c.fillStyle = h.color || this.theme.text;
-        c.font = '9px Consolas, monospace';
+        c.font = '9px ';
         c.textAlign = 'left';
         c.fillText(h.label, l + 4, y - 3);
       }
@@ -664,7 +664,7 @@ export class Chart {
     const x = this.pad.l + this.plotWidth;
     c.save();
     c.fillStyle = this.theme.text;
-    c.font = '10px Consolas, monospace';
+    c.font = '10px ';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
     for (let g = 0; g <= this.gridY; g++) {
@@ -683,7 +683,7 @@ export class Chart {
     const { l, t } = this.pad;
     const yBase = t + this.plotHeight;
     c.save();
-    c.font = '9px Consolas, monospace';
+    c.font = '9px ';
     c.textAlign = 'center';
     c.textBaseline = 'top';
     c.strokeStyle = this.theme.gridStrong;
@@ -734,7 +734,7 @@ export class Chart {
     if (insideY) {
       const v = this.pxToY(y, range);
       const label = fmtNum(v, this.yFormat);
-      c.font = '10px Consolas, monospace';
+      c.font = '10px ';
       const tw = c.measureText(label).width + 8;
       const bx = l + pw + 2;
       c.fillStyle = this.theme.crosshairBg;
@@ -751,7 +751,7 @@ export class Chart {
     const bar = this.bars[index];
     if (bar?.t) {
       const label = String(bar.t);
-      c.font = '10px Consolas, monospace';
+      c.font = '10px ';
       const tw = c.measureText(label).width + 10;
       const bx = clamp(cx - tw / 2, l, l + pw - tw);
       const by = t + ph + 1;
@@ -785,7 +785,7 @@ export class Tooltip {
       borderRadius: '4px', padding: '7px 10px', fontSize: '11px',
       lineHeight: '1.65', color: '#1a1d21', whiteSpace: 'nowrap',
       boxShadow: '0 6px 20px rgba(16,24,40,.14)', display: 'none',
-      fontFamily: 'Consolas, "Cascadia Code", monospace',
+      fontFamily: '-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif',
       transition: 'opacity .08s',
     }, opts.style || {});
     container.style.position = container.style.position || 'relative';

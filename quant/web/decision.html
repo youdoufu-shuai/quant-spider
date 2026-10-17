@@ -3,127 +3,84 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>决策驾驶舱 · Decision Cockpit</title>
-<style>
-  :root{
-    /* 亮色主题，与量化看板/选股页保持一致。
-       ⚠️ 这里的取值必须和 decision-cockpit.js 里的 `const C = {...}` 对得上 ——
-          canvas 是白底深字，页面要是深色就成了「深色页面里一块白画布」
-          （实际发生过：主题改造时 canvas 先改了，页面 CSS 漏了）。
-         两边都改完才算数。 */
-    --bg:#f5f6f8;--panel:#ffffff;--panel2:#fafbfc;--border:#e3e6ea;
-    --text:#1a1d21;--muted:#6b7280;--dim:#9aa1ab;--accent:#d6336c;
-    --up:#d92b3f;--down:#12a06a;--warn:#b8860b;--ok:#0e8f68;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--text);
-    font:12px/1.6 Consolas,"Cascadia Code",ui-monospace,monospace}
-  a{color:var(--accent);text-decoration:none}
-
-  #top{display:flex;align-items:center;gap:9px;padding:9px 14px;flex-wrap:wrap;
-    border-bottom:1px solid var(--border);background:var(--panel);
-    position:sticky;top:0;z-index:30}
-  #top h1{margin:0;font-size:12px;letter-spacing:.14em;font-weight:400}
-  .sub{color:var(--accent);font-size:9px;letter-spacing:.1em}
-  select,input,button{background:#fff;color:var(--text);border:1px solid var(--border);
-    padding:4px 8px;font:inherit;font-size:11px;border-radius:3px}
-  button{cursor:pointer}
-  button:hover{border-color:var(--accent)}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-  .spacer{flex:1}
-  .pill{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:9px;
-    border:1px solid var(--border);font-size:10px;color:var(--muted)}
-  .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
-
-  #wrap{padding:11px 14px 40px;display:grid;gap:11px;max-width:2200px;margin:0 auto}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;min-width:0}
-  .card>h2{margin:0;padding:7px 12px;font-size:10px;font-weight:400;color:var(--muted);
-    letter-spacing:.08em;border-bottom:1px solid var(--border);
-    display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
-  .card .body{padding:10px 12px}
-  .chartbox{position:relative}
-  canvas{display:block;width:100%}
-
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
-  label.f{display:flex;flex-direction:column;gap:2px;font-size:10px;color:var(--muted)}
-  table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{text-align:right;padding:4px 8px;border-bottom:1px solid #eef1f4;white-space:nowrap}
-  th{color:var(--muted);font-weight:400;font-size:10px}
-  th:first-child,td:first-child{text-align:left}
-  td.num{font-variant-numeric:tabular-nums}
-  .tablewrap{overflow-x:auto}
-  .note{color:var(--muted);font-size:10px;line-height:1.85;padding:9px 12px;
-    background:var(--panel2);border-left:2px solid var(--accent)}
-  .up{color:var(--up)}.dn{color:var(--down)}.wn{color:var(--warn)}
-  .ok{color:var(--ok)}.mut{color:var(--muted)}
-  #err{display:none;margin:0 14px;padding:9px 12px;border:1px solid var(--up);
-    border-radius:4px;color:var(--up);background:#fdf2f4;white-space:pre-wrap}
-
-  /* 一句话摘要 */
-  .headline{padding:12px 14px 4px;font-size:17px;font-weight:700;line-height:1.4}
-  .headline.up{color:var(--up)}
-  .headline.dn{color:var(--down)}
-  .headline.wn{color:var(--warn)}
-  .headline.mut{color:var(--muted)}
-
-  /* 风控否决时的解释条 */
-  .veto{margin:0 14px 12px;padding:8px 11px;border-radius:3px;
-    background:#fdf2f4;border-left:2px solid var(--up);
-    color:var(--muted);font-size:10.5px;line-height:1.7}
-
-  /* 结论兜底：即使 canvas 出问题，HTML 也把答案说清楚 */
-  #fallback{display:grid;grid-template-columns:auto auto auto 1fr;gap:10px 22px;
-    align-items:baseline;padding:4px 14px 12px}
-  #fallback .big{font-size:28px;font-weight:700;line-height:1.1}
-  #fallback .kv{font-size:10px;color:var(--muted)}
-  #fallback .why{font-size:12px}
-  #fallback .why small{display:block;color:var(--muted);font-size:10px;margin-top:3px}
-
-  .results{max-height:180px;overflow:auto;margin-top:8px;display:none;
-    border:1px solid var(--border);border-radius:3px;background:#fff}
-  .results.on{display:block}
-  .results .it{display:flex;justify-content:space-between;gap:8px;padding:5px 9px;
-    border-bottom:1px solid #eef1f4;cursor:pointer;font-size:11px}
-  .results .it:hover{background:#f7f9fb}
-  .results .it b{font-weight:400}
-  .results .it .px{color:var(--muted);font-size:10px;white-space:nowrap}
-  .picked{margin-top:8px;display:flex;flex-wrap:wrap;gap:5px}
-  .chip{padding:2px 8px;border:1px solid var(--border);border-radius:9px;
-    font-size:10px;color:var(--muted);cursor:pointer;white-space:nowrap}
-  .chip:hover{border-color:var(--accent);color:var(--text)}
-  .chip.cur{border-color:var(--accent);color:var(--text);background:#fdf2f6}
-
-  /* 翻转子 —— HTML 版，比 canvas 更易读 */
-  .flip{display:grid;gap:7px;padding:10px 12px}
-  .flip .it{display:grid;grid-template-columns:64px 54px 1fr 150px;gap:10px;
-    align-items:center;padding:7px 9px;border-radius:3px;background:var(--panel2);
-    border-left:2px solid var(--dim)}
-  .flip .it.done{border-left-color:var(--ok)}
-  .flip .it.near{border-left-color:var(--warn)}
-  .flip .it.far{border-left-color:var(--dim)}
-  .flip .it b{font-weight:400}
-  .flip .track{height:6px;background:#eef1f4;border-radius:3px;overflow:hidden}
-  .flip .track span{display:block;height:100%}
-
-  @media (max-width:900px){
-    #wrap{padding:8px 9px 30px}
-    #fallback{grid-template-columns:1fr 1fr}
-    .flip .it{grid-template-columns:1fr;gap:5px}
-  }
-</style>
+<title>决策驾驶舱 · 量化工作台</title>
+<link rel="stylesheet" href="/theme.css" />
+  <style>
+    /* 本页专属 */
+    #cvCockpit { height: 280px; }
+    /* 一句话结论：整页最该先读到的东西，所以给最大字号 */
+    .headline {
+      font-size: var(--fs-big);
+      font-weight: 600;
+      line-height: 1.4;
+      letter-spacing: -0.01em;
+      margin-bottom: 10px;
+      max-width: 80ch;
+    }
+    .headline.up { color: var(--up); }
+    .headline.dn { color: var(--down); }
+    .headline.wn { color: var(--warn); }
+    .headline.mut { color: var(--ink-2); }
+    /* 风控否决说明 */
+    .veto {
+      font-size: var(--fs-small);
+      color: var(--muted);
+      line-height: 1.85;
+      max-width: 78ch;
+      margin-top: 10px;
+    }
+    .veto b { color: var(--up); }
+    /* 结论兜底读数 */
+    #fallback { display: flex; gap: 40px; flex-wrap: wrap; align-items: baseline; }
+    #fallback .big { font-size: var(--fs-readout); font-weight: 600;
+                     line-height: 1.05; letter-spacing: -0.02em;
+                     font-variant-numeric: tabular-nums; }
+    #fallback .kv { display: block; color: var(--muted); font-size: var(--fs-label); }
+    #fallback .why { font-size: var(--fs-small); line-height: 1.8;
+                     max-width: 60ch; min-width: 260px; flex: 1; }
+    #fallback .why small { display: block; color: var(--muted); margin-top: 4px;
+                           font-size: var(--fs-label); }
+    /* 翻转子：一条一行，左侧色条表示状态 */
+    .flip { display: grid; gap: 0; }
+    .flip .it {
+      display: grid;
+      grid-template-columns: 68px 62px minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: center;
+      padding: 10px 0 10px 12px;
+      border-bottom: 1px solid var(--rule);
+      border-left: 2px solid var(--rule-strong);
+      font-size: var(--fs-small);
+    }
+    .flip .it.done { border-left-color: var(--ok); }
+    .flip .it.near { border-left-color: var(--warn); }
+    .flip .it.far  { border-left-color: var(--rule-strong); }
+    .flip .it b { font-weight: 600; }
+    .flip .track { display: none; }
+    @media (max-width: 760px) {
+      .flip .it { grid-template-columns: 1fr; gap: 4px; }
+    }
+  </style>
 </head>
 <body>
 
-<div id="top">
-  <h1>DECISION COCKPIT</h1>
-  <div class="sub">决策驾驶舱</div>
-  <span class="pill"><span class="dot" id="dot"></span><span id="status">加载中…</span></span>
-  <span class="spacer"></span>
-  <a href="/">看板</a>
-  <a href="/pro.html">专业图表</a>
-  <a href="/screen.html">选股</a>
-  <a href="/paper.html">模拟盘</a>
-</div>
+<header class="masthead">
+    <h1 class="brand">决策驾驶舱</h1>
+    <span class="where">结论 · 依据 · 什么会改变结论</span>
+    <div class="meta">
+      <span><span class="dot" id="dot"></span><span id="status">加载中…</span></span>
+    </div>
+  </header>
+
+  <nav class="navbar">
+    <a href="/">看板</a>
+    <a href="/screen.html">选股</a>
+    <a href="/decision.html" class="here">决策驾驶舱</a>
+    <a href="/pro.html">专业图表</a>
+    <a href="/paper.html">模拟盘</a>
+    <a href="http://127.0.0.1:4317/live" target="_blank">Agent 实时面板</a>
+    <a href="http://127.0.0.1:4317/" target="_blank">美术查看器</a>
+  </nav>
 <div id="err"></div>
 
 <div id="wrap">

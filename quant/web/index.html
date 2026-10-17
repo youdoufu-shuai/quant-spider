@@ -3,124 +3,71 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>量化看板 · Quant Board</title>
-<style>
-  :root{
-    /* 亮色主题：白底 + 浅灰分隔 + 深色文字，像正经金融终端 */
-    --bg:#f5f6f8; --panel:#ffffff; --panel2:#fafbfc; --border:#e3e6ea;
-    --text:#1a1d21; --muted:#6b7280; --accent:#d6336c;
-    --up:#d92b3f; --down:#12a06a;         /* A股习惯：红涨绿跌 */
-    --code:#0e8f68; --model:#c2643f; --you:#a16207;
-  }
-  *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--text);
-    font:12px/1.55 Consolas,"Cascadia Code",ui-monospace,monospace}
-  a{color:var(--accent)}
-  #top{display:flex;align-items:center;gap:14px;padding:12px 18px;
-    border-bottom:1px solid var(--border);background:var(--panel);flex-wrap:wrap}
-  #top h1{margin:0;font-size:13px;letter-spacing:.16em;font-weight:400}
-  #top .sub{color:var(--accent);font-size:10px;letter-spacing:.12em}
-  select,input,button{background:#fff;color:var(--text);border:1px solid var(--border);
-    padding:5px 8px;font:inherit;font-size:11px;border-radius:3px}
-  input::placeholder{color:var(--muted)}
-  select:focus,input:focus,button:focus{outline:none;border-color:var(--accent)}
-  button{cursor:pointer}
-  button:hover{border-color:var(--accent)}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
-  .spacer{flex:1}
-  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:10px;
-    border:1px solid var(--border);font-size:10px;color:var(--muted)}
-  .dot{width:6px;height:6px;border-radius:50%;background:var(--code)}
-  .dot.err{background:var(--accent)}
-  #wrap{padding:14px 18px 40px;display:grid;gap:14px}
-  #wrap>*{min-width:0}
-  .card{background:var(--panel);border:1px solid var(--border);border-radius:4px;
-    box-shadow:0 1px 2px rgba(16,24,40,.04),0 1px 3px rgba(16,24,40,.05)}
-  /* P2-6：取数失败时把旧数据标灰，避免把过期数字当成当前值 */
-  #wrap.stale{opacity:.55;transition:opacity .2s}
-  .card>h2{margin:0;padding:9px 13px;font-size:11px;font-weight:400;color:var(--muted);
-    letter-spacing:.1em;border-bottom:1px solid var(--border);display:flex;
-    justify-content:space-between;align-items:center;gap:10px}
-  .card .body{padding:11px 13px}
-  canvas{display:block;width:100%}
-  .quote{display:flex;gap:26px;flex-wrap:wrap;align-items:baseline}
-  .quote .price{font-size:30px;line-height:1}
-  .quote .chg{font-size:15px}
-  .quote .kv{display:flex;flex-direction:column;gap:1px}
-  .quote .kv span:first-child{color:var(--muted);font-size:10px}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-  @media (max-width:1180px){.grid2,.grid3{grid-template-columns:1fr}}
-  /* grid 子项默认 min-width:auto，会被内部宽内容撑破容器 —— 显式归零 */
-  .grid2>*,.grid3>*{min-width:0}
-  .card{min-width:0}
-  table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{text-align:right;padding:5px 6px;border-bottom:1px solid var(--border);white-space:nowrap}
-  th{color:var(--muted);font-weight:400;font-size:10px;letter-spacing:.04em}
-  th:first-child,td:first-child{text-align:left}
-  /* P1-1：15 列的回测表最小内容宽约 930px，会把单列 grid 撑到 959px，
-     导致 900px 窗口下右侧被裁掉 95px（CDP 实测 docScrollWidth=977）。
-     用横向滚动容器隔离，避免表格反过来撑破整页布局。 */
-  .tablewrap{overflow-x:auto;margin:-3px 0}
-  .tablewrap table{min-width:max-content}
-  td.num{font-variant-numeric:tabular-nums}
-  tr.sel{background:#eef2f7}
-  tr:hover{background:#f7f9fb;cursor:pointer}
-  .pos{color:var(--up)} .neg{color:var(--down)} .mut{color:var(--muted)}
-  .tag{display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;border:1px solid}
-  .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}
-  @media (max-width:760px){.metrics{grid-template-columns:repeat(2,1fr)}}
-  .metric{background:var(--panel2);border:1px solid var(--border);border-radius:3px;padding:8px 10px}
-  .metric .k{color:var(--muted);font-size:10px}
-  .metric .v{font-size:17px;margin-top:3px}
-  .log{max-height:260px;overflow:auto;font-size:11px}
-  .log div{padding:3px 0;border-bottom:1px solid #eef0f3;display:flex;gap:9px}
-  .log .t{color:var(--muted);min-width:118px}
-  .log .kind{min-width:44px}
-  .legend{display:flex;gap:13px;flex-wrap:wrap;font-size:10px;color:var(--muted);margin-top:6px}
-  .legend i{display:inline-block;width:9px;height:3px;vertical-align:middle;margin-right:4px}
-  .warn{color:var(--you);font-size:10px}
-  #err{display:none;margin:0 18px;padding:10px 13px;border:1px solid var(--accent);
-    border-radius:4px;color:#a3234f;background:#fdf2f6;
-    white-space:pre-wrap;word-break:break-word}
-</style>
+<title>看板 · 量化工作台</title>
+  <link rel="stylesheet" href="/theme.css" />
+  <style>
+    /* 本页专属：K 线画布高度、报价区的次要列宽 */
+    #cvMain { height: 360px; }
+    #sigSel { margin-left: 6px; }
+    .quote .chg { min-width: 96px; }
+  </style>
 </head>
 <body>
 
-<div id="top">
-  <h1>QUANT BOARD</h1>
-  <div class="sub">REAL MARKET DATA</div>
-  <select id="market"></select>
-  <select id="symbol"></select>
-  <select id="interval"></select>
-  <select id="limit">
-    <option value="120">120 根</option>
-    <option value="250" selected>250 根</option>
-    <option value="500">500 根</option>
-    <option value="800">800 根</option>
-  </select>
-  <button id="reload" class="primary">刷新</button>
-  <select id="autoRefresh" title="自动刷新间隔">
-    <option value="0">手动刷新</option>
-    <option value="15000">每 15 秒</option>
-    <option value="30000" selected>每 30 秒</option>
-    <option value="60000">每 1 分钟</option>
-    <option value="300000">每 5 分钟</option>
-  </select>
-  <span class="spacer"></span>
-  <span class="pill"><span class="dot" id="dot"></span><span id="status">加载中…</span></span>
-  <span class="kv" id="lastAt"></span>
-  <a href="/pro.html" title="专业图表：十字光标、缩放平移、参数优化">专业图表 →</a>
-  <a href="/decision.html" title="决策驾驶舱：6 个因子怎么加权成决策，风控在哪一步拦截">决策驾驶舱 →</a>
-  <a href="/screen.html" title="选股：全市场快照 + 硬性条件 + 横截面因子排序，可选 AI 排序">选股 →</a>
-  <a href="/paper.html" title="模拟盘：可手动下单、自动交易、账户持久化">模拟盘 →</a>
-  <a href="http://127.0.0.1:4317/live" target="_blank">Agent 实时面板</a>
-  <a href="http://127.0.0.1:4317/" target="_blank" title="上游 Prompt Spider 的美术查看器（蜘蛛动画）">美术查看器 ↗</a>
-</div>
+  <header class="masthead">
+    <h1 class="brand">量化工作台</h1>
+    <span class="where">实时行情 · 因子 · 回测</span>
+    <div class="meta">
+      <span><span class="dot" id="dot"></span><span id="status">加载中…</span></span>
+      <span id="lastAt"></span>
+    </div>
+  </header>
 
-<div id="err"></div>
+  <nav class="navbar">
+    <a href="/" class="here">看板</a>
+    <a href="/screen.html">选股</a>
+    <a href="/decision.html">决策驾驶舱</a>
+    <a href="/pro.html">专业图表</a>
+    <a href="/paper.html">模拟盘</a>
+    <a href="http://127.0.0.1:4317/live" target="_blank">Agent 实时面板</a>
+    <a href="http://127.0.0.1:4317/" target="_blank">美术查看器</a>
+  </nav>
 
-<div id="wrap">
+  <div id="err"></div>
+
+  <div id="wrap">
+
+    <div class="row" style="margin-bottom:2px">
+      <label class="f">市场
+        <select id="market"></select>
+      </label>
+      <label class="f">标的
+        <select id="symbol"></select>
+      </label>
+      <label class="f">粒度
+        <select id="interval"></select>
+      </label>
+      <label class="f">根数
+        <select id="limit">
+          <option value="120">120 根</option>
+          <option value="250" selected>250 根</option>
+          <option value="500">500 根</option>
+          <option value="800">800 根</option>
+        </select>
+      </label>
+      <label class="f">自动刷新
+        <select id="autoRefresh" title="自动刷新间隔">
+          <option value="0">手动</option>
+          <option value="15000">15 秒</option>
+          <option value="30000" selected>30 秒</option>
+          <option value="60000">1 分钟</option>
+          <option value="300000">5 分钟</option>
+        </select>
+      </label>
+      <button id="reload" class="primary">刷新</button>
+    </div>
+
+
 
   <!-- 实时行情 -->
   <div class="card">
@@ -131,7 +78,7 @@
   <!-- K 线 + 指标 -->
   <div class="card">
     <h2>
-      <span>K 线 / 均线 / 布林带 <span class="mut" id="chartInfo"></span></span>
+      <span>K 线、均线、布林带 <span class="mut" id="chartInfo"></span></span>
       <span class="mut" id="strategyPick">信号来源：<select id="sigSel"></select></span>
     </h2>
     <div class="body">
@@ -377,21 +324,26 @@ function quote() {
   const chg = q.changePct ?? 0;
   const col = chg > 0 ? 'var(--up)' : chg < 0 ? 'var(--down)' : 'var(--muted)';
   const isUp = chg >= 0;
+  // 报价块：左边价格独占一栏，右边 OHLC 排成网格。
+  // ⚠️ 名称行不用中点串接（那是排版噪音），空格分隔就够。
   $('quote').innerHTML = `
-    <div>
-      <div class="kv"><span>${m.name} · ${m.symbol} · ${m.interval}</span>
-        <span class="price" style="color:${col}">${fmt(q.last)}</span></div>
-      <div class="chg" style="color:${col}">${isUp ? '▲' : '▼'} ${fmt(q.change)} (${pct(chg)})</div>
+    <div class="lead">
+      <span class="name">${m.name} ${m.symbol} ${m.interval}</span>
+      <span class="price" style="color:${col}">${fmt(q.last)}</span>
+      <span class="chg" style="color:${col}">${isUp ? '+' : ''}${fmt(q.change)} (${pct(chg)})</span>
     </div>
-    <div class="kv"><span>今开</span><b>${fmt(q.open)}</b></div>
-    <div class="kv"><span>最高</span><b>${fmt(q.high)}</b></div>
-    <div class="kv"><span>最低</span><b>${fmt(q.low)}</b></div>
-    <div class="kv"><span>昨收</span><b>${fmt(q.prevClose)}</b></div>
-    <div class="kv"><span>成交量</span><b>${fmt(q.volume, 0)}</b></div>
-    <div class="kv"><span>K线区间</span><b>${m.first} → ${m.last}</b></div>
-    <div class="kv"><span>K线根数</span><b>${m.count}</b></div>`;
+    <div class="stats">
+      <div class="kv"><span>今开</span><b>${fmt(q.open)}</b></div>
+      <div class="kv"><span>最高</span><b>${fmt(q.high)}</b></div>
+      <div class="kv"><span>最低</span><b>${fmt(q.low)}</b></div>
+      <div class="kv"><span>昨收</span><b>${fmt(q.prevClose)}</b></div>
+      <div class="kv"><span>成交量</span><b>${fmt(q.volume, 0)}</b></div>
+      <div class="kv"><span>K 线根数</span><b>${m.count}</b></div>
+      <div class="kv" style="grid-column:span 2"><span>K 线区间</span><b>${m.first} 至 ${m.last}</b></div>
+    </div>`;
   $('quoteSrc').textContent = `数据源：${q.source || m.source}`;
-  $('chartInfo').textContent = `· ${m.count} 根 ${m.interval}`;
+  // 区块标题里只补根数和粒度，不加前缀圆点
+  $('chartInfo').textContent = `${m.count} 根 ${m.interval}`;
 }
 
 function mainChart() {
