@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>模拟盘 · 量化工作台</title>
+<title>模拟盘 ｜ 量化工作台</title>
 <link rel="stylesheet" href="/theme.css" />
   <style>
       /* 本页专属：两栏 —— 左边操作区（建仓/下单/自动交易），右边看结果（总览/曲线/明细）。
@@ -37,6 +37,27 @@
     button.sell { color: var(--down); border-color: var(--down); }
     button.sell:hover { background: var(--down); color: #fff; }
     button.on { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+    /* kv1/kv2 里是平铺的 <div class="k"> + <div class="v"> 对，
+       不是嵌套的 .kv 行。若继承 .kv 的横向 flex，10 个子元素会被挤成一行，
+       每个汉字单独换行（实测就是这个 bug）。改成两列网格。 */
+    #kv1, #kv2 {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 4px 20px;
+      align-content: start;
+      flex: 1;
+      min-width: 210px;
+    }
+    #kv1 > .k, #kv2 > .k {
+      color: var(--muted); font-size: var(--fs-label);
+      white-space: nowrap; border: none; padding: 0;
+    }
+    #kv1 > .v, #kv2 > .v {
+      text-align: right; white-space: nowrap;
+      font-variant-numeric: tabular-nums; font-weight: 500;
+      border: none; padding: 0;
+    }
+
     /* 账户读数 */
     .big { font-size: var(--fs-big); font-weight: 600;
            font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
@@ -48,7 +69,7 @@
     .kv .v { font-variant-numeric: tabular-nums; font-weight: 500; }
     .tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--rule); margin-bottom: 14px; }
     .tabs button {
-      border: none; border-bottom: 2px solid transparent; border-radius: 0;
+      border: none; border-bottom: 1px solid transparent; border-radius: 0;
       background: none; padding: 6px 0 8px; margin-bottom: -1px;
       color: var(--muted); font-size: var(--fs-small);
     }
@@ -60,22 +81,28 @@
 </head>
 <body>
 
-<header class="masthead">
+<div class="cover">
+  <div class="cover-inner">
+  <header class="masthead">
     <h1 class="brand">模拟盘</h1>
-    <span class="where">手动下单 · 自动交易 · 账户持久化</span>
+        <nav class="navbar">
+      <a href="/">看板</a>
+      <a href="/heatmap.html">云图</a>
+      <a href="/screen.html">选股</a>
+      <a href="/decision.html">决策驾驶舱</a>
+      <a href="/pro.html">专业图表</a>
+      <a href="/paper.html" class="here">模拟盘</a>
+    </nav>
     <div class="meta">
       <span><span class="dot idle" id="dot"></span><span id="status">未选择账户</span></span>
     </div>
   </header>
-
-  <nav class="navbar">
-    <a href="/">看板</a>
-    <a href="/screen.html">选股</a>
-    <a href="/decision.html">决策驾驶舱</a>
-    <a href="/pro.html">专业图表</a>
-    <a href="/paper.html" class="here">模拟盘</a>
-    <a href="/heatmap.html">云图</a>
-  </nav>
+  <div class="cover-main">
+    <h2 class="title">模拟盘</h2>
+    <p class="lede">下单、持仓与收益归因。</p>
+  </div>
+  </div>
+</div>
 <div id="err"></div>
 
 <div id="wrap">

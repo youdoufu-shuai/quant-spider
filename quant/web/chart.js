@@ -199,12 +199,13 @@ export class Chart {
     this.gridY = opts.gridY ?? 4;
     this.baseline = opts.baseline ?? null;      // 水平参考线（如初始资金）
     this.theme = Object.assign({
-      // 亮色主题：画布底色是白卡片，网格/文字/轴线都要在白底上够深
-      bg: '#ffffff', grid: '#eceff3', gridStrong: '#d8dde3',
-      text: '#6b7280', textStrong: '#1a1d21',
-      up: '#d92b3f', down: '#12a06a',
-      crosshair: '#8b93a1', crosshairBg: 'rgba(255,255,255,.96)',
-      border: '#c7ccd4',
+      // 与 theme.css v3 对齐：只有涨跌是彩色，其余全是灰阶。
+      // 网格要极淡 —— 图表里的信息是 K 线，不是网格。
+      bg: '#ffffff', grid: '#f2f2f0', gridStrong: '#e4e4e1',
+      text: '#7c848a', textStrong: '#171a1e',
+      up: '#a02a24', down: '#2e6152',
+      crosshair: '#a9afb4', crosshairBg: 'rgba(255,255,255,.97)',
+      border: '#d9d9d5',
     }, opts.theme || {});
 
     this.bars = [];
@@ -781,10 +782,10 @@ export class Tooltip {
     this.el.className = 'chart-tooltip';
     Object.assign(this.el.style, {
       position: 'absolute', pointerEvents: 'none', zIndex: 20,
-      background: 'rgba(255,255,255,.98)', border: '1px solid #e3e6ea',
+      background: 'rgba(255,255,255,.98)', border: '1px solid #e6e6e3',
       borderRadius: '4px', padding: '7px 10px', fontSize: '11px',
-      lineHeight: '1.65', color: '#1a1d21', whiteSpace: 'nowrap',
-      boxShadow: '0 6px 20px rgba(16,24,40,.14)', display: 'none',
+      lineHeight: '1.7', color: '#171a1e', whiteSpace: 'nowrap',
+      boxShadow: '0 16px 48px rgba(23,26,30,.12)', display: 'none',
       fontFamily: '-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif',
       transition: 'opacity .08s',
     }, opts.style || {});

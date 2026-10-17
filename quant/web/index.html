@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>看板 · 量化工作台</title>
+<title>看板 ｜ 量化工作台</title>
   <link rel="stylesheet" href="/theme.css" />
   <style>
     /* 本页专属：K 线画布高度、报价区的次要列宽 */
@@ -14,23 +14,29 @@
 </head>
 <body>
 
+  <div class="cover">
+  <div class="cover-inner">
   <header class="masthead">
     <h1 class="brand">量化工作台</h1>
-    <span class="where">实时行情 · 因子 · 回测</span>
+        <nav class="navbar">
+      <a href="/" class="here">看板</a>
+      <a href="/heatmap.html">云图</a>
+      <a href="/screen.html">选股</a>
+      <a href="/decision.html">决策驾驶舱</a>
+      <a href="/pro.html">专业图表</a>
+      <a href="/paper.html">模拟盘</a>
+    </nav>
     <div class="meta">
       <span><span class="dot" id="dot"></span><span id="status">加载中…</span></span>
       <span id="lastAt"></span>
     </div>
   </header>
-
-  <nav class="navbar">
-    <a href="/" class="here">看板</a>
-    <a href="/heatmap.html">云图</a>
-    <a href="/screen.html">选股</a>
-    <a href="/decision.html">决策驾驶舱</a>
-    <a href="/pro.html">专业图表</a>
-    <a href="/paper.html">模拟盘</a>
-  </nav>
+  <div class="cover-main">
+    <h2 class="title">看板</h2>
+    <p class="lede">自选标的的实时行情、技术指标与回测。</p>
+  </div>
+  </div>
+</div>
 
   <div id="err"></div>
 
@@ -108,7 +114,7 @@
   <!-- 回测绩效 -->
   <div class="card">
     <h2>
-      <span>回测绩效 <span class="mut">真实历史数据 · 次日开盘成交 · 含手续费与滑点</span></span>
+      <span>回测绩效 <span class="mut">真实历史数据 次日开盘成交 · 含手续费与滑点</span></span>
       <span class="mut" id="btMeta"></span>
     </h2>
     <div class="body">
@@ -180,7 +186,7 @@ let DATA = null, META = null, SIG = 'rsi_reversion';
 const C = {
   text:'#1a1d21', muted:'#6b7280', grid:'#eceff3', border:'#e3e6ea',
   up:'#d92b3f', down:'#12a06a',
-  ema12:'#b8860b', ema26:'#2563eb', sma20:'#7c3aed',
+  ema12:'#5a6e85', ema26:'#2f4054', sma20:'#8e9aa8',
   bbu:'#a8b0ba', bbl:'#a8b0ba', bbm:'#8b93a1',
   dif:'#b8860b', dea:'#2563eb', hist:'#9aa3ad',
   rsi:'#b8860b', k:'#0e9f6e', d:'#d1562f',

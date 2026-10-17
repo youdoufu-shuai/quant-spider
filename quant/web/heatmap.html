@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>市场云图 · 量化工作台</title>
+<title>市场云图 ｜ 量化工作台</title>
   <link rel="stylesheet" href="/theme.css" />
   <style>
     /* 本页专属：云图铺满宽度，告示条和读数条贴着它 */
@@ -50,23 +50,29 @@
 </head>
 <body>
 
+  <div class="cover">
+  <div class="cover-inner">
   <header class="masthead">
     <h1 class="brand">量化工作台</h1>
-    <span class="where">市场云图</span>
+        <nav class="navbar">
+      <a href="/">看板</a>
+      <a href="/heatmap.html" class="here">云图</a>
+      <a href="/screen.html">选股</a>
+      <a href="/decision.html">决策驾驶舱</a>
+      <a href="/pro.html">专业图表</a>
+      <a href="/paper.html">模拟盘</a>
+    </nav>
     <div class="meta">
       <span><span class="dot" id="dot"></span><span id="status">加载中…</span></span>
       <span id="asOf"></span>
     </div>
   </header>
-
-  <nav class="navbar">
-    <a href="/">看板</a>
-    <a href="/heatmap.html" class="here">云图</a>
-    <a href="/screen.html">选股</a>
-    <a href="/decision.html">决策驾驶舱</a>
-    <a href="/pro.html">专业图表</a>
-    <a href="/paper.html">模拟盘</a>
-  </nav>
+  <div class="cover-main">
+    <h2 class="title">云图</h2>
+    <p class="lede">A 股全市场按申万行业分组，面积是市值，颜色是涨跌。</p>
+  </div>
+  </div>
+</div>
 
   <div id="err"></div>
 
@@ -111,7 +117,7 @@
 
     <div class="card">
       <h2>
-        <span>按申万一级行业分组 · 面积 = 市值</span>
+        <span>按申万一级行业分组 面积 = 市值</span>
         <span class="mut" id="hint">把鼠标移到方块上看明细</span>
       </h2>
       <div class="body chartbox">
@@ -124,12 +130,8 @@
     </div>
 
     <div class="note">
-      <b>怎么读这张图</b><br>
-      · <b>面积</b>是该股票的总市值 —— 方块越大，权重越高，它涨跌对指数影响越大<br>
-      · <b>颜色</b>是涨跌幅，红色涨、青色跌，±10% 封顶（ST 股和北证可能超出，按满色画）<br>
-      · <b>板块的涨跌是市值加权的</b>，不是成分股简单平均 ——
-        简单平均会让几只小盘股的暴涨盖过权重股的方向<br>
-      · <span class="mut">这不是官方板块指数：申万指数有自己的成分股权重与调整规则。
+      <b>怎么读这张图</b><br><b>面积</b>是该股票的总市值 —— 方块越大，权重越高，它涨跌对指数影响越大<br><b>颜色</b>是涨跌幅，红色涨、青色跌，±10% 封顶（ST 股和北证可能超出，按满色画）<br><b>板块的涨跌是市值加权的</b>，不是成分股简单平均 ——
+        简单平均会让几只小盘股的暴涨盖过权重股的方向<br><span class="mut">这不是官方板块指数：申万指数有自己的成分股权重与调整规则。
         这里是用全市场快照现算的近似，用途是看方向，不是复现点位。</span>
     </div>
 
@@ -149,9 +151,9 @@ const API = (p, opt) => fetch(p, opt).then(async (r) => {
 
 // ── 色阶 ────────────────────────────────────────────────────
 // A 股习惯：红涨绿（青）跌。中性区用极淡的纸色，避免一屏全是灰色块。
-const NEUTRAL = [240, 242, 244];
-const UP = [192, 50, 42];      // --up   朱红
-const DOWN = [28, 110, 86];    // --down 深青
+const NEUTRAL = [242, 242, 240];
+const UP = [160, 42, 36];      // --up   酒红
+const DOWN = [46, 97, 82];     // --down 松绿
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const mix = (a, b, t) => `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)},${Math.round(a[1] + (b[1] - a[1]) * t)},${Math.round(a[2] + (b[2] - a[2]) * t)})`;
 

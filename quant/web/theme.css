@@ -1,211 +1,270 @@
 /* ═══════════════════════════════════════════════════════════════
-   量化工作台 · 共享设计系统
+   量化工作台 · 设计系统 v3
 
    ═══════════════════════════════════════════════════════════════
-   设计方向：行情底稿
+   方向：私人银行月报 —— 封面 + 报表
    ═══════════════════════════════════════════════════════════════
-   这个工具的性质决定了它的视觉：**数字、真钱、每天看**。
-   所以设计上唯一的奢侈是「清晰的层级」和「对齐的数字」，
-   其余一律让位。
+   比喻对象不是「杂志排版」，是**一份装在信封里的对账单**：
+   一张深色硬封面，翻开是安静的白色报表。
 
-   三个决定，都是从「不用什么」来的：
-
-   1. 不用卡片
-      圆角白卡 + 同一档阴影，是把任何内容都装进去的默认做法。
-      这里所有内容都在**同一张纸上**，靠留白和字号分层。
-      分组靠间距，不靠边框 —— 边框会把版面切成碎片。
-
-   2. 线只在表格里
-      表格的行分隔线**编码信息**（一行是一条记录），该有。
-      区块之间的横线只是装饰，去掉，用留白代替。
-
-   3. 红绿是唯一的饱和色
-      朱红（涨）和深青（跌）是这个行业约定，也是全站仅有的彩色。
-      链接用墨色加下划线，焦点用墨色描边 —— 不再引入第三种颜色。
-      这样视线只会被「涨了/跌了」吸引，这正是我们想要的。
+   胆量只花在一个地方：**封面**。
+   深墨蓝（钢笔水）+ 象牙白（唯一的暖色），全出血铺满页首，
+   产品名、导航、页面名、状态全部压在封面里。
+   封面之下是纯白 + 72px 留白 + 发丝线表格，什么都不抢。
 
    ═══════════════════════════════════════════════════════════════
-   明确规避的 AI 生成痕迹
+   为什么不是「高级杂志风」（第一版方案被我自己否掉）
    ═══════════════════════════════════════════════════════════════
-   · 全大写字母间距标题（STOCK SCREENER 那种）—— 中文界面里更没道理
-   · 中点连接的元信息（A · B · C）—— 改用逗号或分行，本来就更易读
-   · 箭头后缀链接（选股 →）—— 链接就是链接，不需要箭头提示可点
-   · 等宽字体做小标签 —— 等宽只在真正需要对齐数字的地方
-   · 统一圆角 + 统一阴影 —— 见上
-   · 装饰性渐变、发光、毛玻璃 —— 零
+   米白底 + 高对比衬线 + 发丝线 + 零圆角 + 密排 —— 这套组合是
+   当下 AI 生成页面的第三大套路（broadsheet）。它看起来「有文化」，
+   但没有材质、没有重量，和任何主题都无关。
+
+   真正的奢侈感来自**材质对比**和**克制的量**，不是细线：
+     · 一整块深色（有重量），对着一整块白（有呼吸）
+     · 只在一个地方用大字号，其余全部安静
+     · 不用第三种颜色 —— 彩色只留给涨跌，那是数据不是装饰
+
+   ═══════════════════════════════════════════════════════════════
+   刻意规避的套路
+   ═══════════════════════════════════════════════════════════════
+   · 奶油底 + 衬线 + 陶土色
+   · 近黑底 + 荧光绿 / 朱红
+   · 报纸式：满屏发丝线、密排小字、竖线分栏
+   · 统一圆角卡片 + 同一阴影
+   · 模板化外壳：全大写 eyebrow 标签、中点「·」连接、箭头后缀、
+     小号等宽字做数据标签、每个区块 fade-in
+   · 金色渐变 / 金属质感 / 发光
 
    ═══════════════════════════════════════════════════════════════
    字体策略
    ═══════════════════════════════════════════════════════════════
-   全站一个家族（系统无衬线），中文优先命中苹方/微软雅黑。
-   数字用 tabular-nums 保证列对齐 —— 这是表格能读的前提。
-
-   不加载网络字体：这个工具在本地跑，多一个网络依赖就多一个
-   离线打不开的理由。系统字体在中文下的渲染质量已经足够。
+   宋体（STSong）只出现在 ≥30px 的展示层：封面页名、大数字。
+   正文一律无衬线 —— 宋体在 14px 以下会糊，且正文用宋体是
+   「假装有文化」的常见做法。
    ═══════════════════════════════════════════════════════════════ */
 
 :root {
-  /* ── 纸与墨 ── */
-  --paper: #ffffff;
-  --paper-soft: #f7f8f9;      /* 仅用于表头、输入框这类「凹下去」的地方 */
-  --ink: #16181c;
-  --ink-2: #3d4249;           /* 次级标题 */
-  --muted: #737a82;
-  --faint: #9aa1a9;           /* 占位、禁用 */
-  --rule: #e4e7ea;            /* 表格行线 */
-  --rule-strong: #cfd4d9;     /* 表头底线 */
+  /* ── 封面：钢笔水墨蓝 ── */
+  --cover: #16202b;
+  --cover-2: #1d2936;
+  --ivory: #f3f0e9;          /* 封面上唯一的暖色 */
+  --ivory-muted: rgba(243, 240, 233, .58);
+  --ivory-line: rgba(243, 240, 233, .16);
 
-  /* ── 行情色（全站唯一饱和色）── */
-  --up: #c0322a;              /* 朱红：涨 / 看多 */
-  --down: #1c6e56;            /* 深青：跌 / 看空 */
-  --warn: #8a6100;            /* 提示：偏暗的黄褐，不抢红绿 */
-  --ok: #1c6e56;
+  /* ── 报表：白纸与墨 ── */
+  --paper: #ffffff;
+  --ink: #171a1e;
+  --ink-2: #41474d;
+  --muted: #7c848a;
+  --faint: #b0b6bb;
+  --line: #e6e6e3;           /* 只用于表格行线，不做页面装饰 */
+
+  /* ── 涨跌：唯一的彩色，是数据不是装饰 ── */
+  --up: #a02a24;
+  --down: #2e6152;
+  --warn: #7a5c1e;
 
   /* ── 尺寸 ── */
-  --gutter: 28px;
-  --maxw: 1640px;
-  --radius: 3px;              /* 只给输入框和按钮这一档，其它一律方角 */
+  --maxw: 1180px;
+  --gutter: 56px;
+  --section: 72px;
 
-  /* 字号阶梯：标题和标签拉开 3 倍，靠对比而不是靠装饰分层 */
-  --fs-readout: 42px;         /* 最重要的一两个数字 */
-  --fs-big: 26px;             /* 次级数字 */
-  --fs-title: 19px;           /* 页面标题 */
-  --fs-section: 13px;         /* 区块标题 */
+  /* ── 字号 ── */
+  --fs-cover: 68px;          /* 封面页名 */
+  --fs-hero: 42px;           /* 报表里最重要的数字 */
+  --fs-big: 27px;
+  --fs-title: 13px;
   --fs-body: 13px;
-  --fs-small: 11.5px;
+  --fs-small: 12px;
   --fs-label: 11px;
 
+  --serif: "STSong", "Songti SC", "SimSun", "Noto Serif SC", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
           "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+
+  /* ── 兼容别名 ──────────────────────────────────────────────
+     页面内联 <style> 和部分 JS 仍在引用旧变量名。
+     这里把它们映射到 v3 的语义上，而不是去改几十处内联样式。
+     ⚠️ 新代码请直接用上面的正式变量。 */
+  --rule: var(--line);
+  --rule-strong: #d9d9d5;
+  --border: var(--line);
+  --text: var(--ink);
+  --dim: var(--faint);
+  --accent: var(--ink);
+  --code: #f5f5f3;
+  --paper-soft: #fafaf8;
+  --ok: var(--down);
+  --fs-readout: 27px;
 }
 
 * { box-sizing: border-box; }
 
-html, body {
+html { background: var(--paper); }
+
+body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font: 400 var(--fs-body)/1.6 var(--sans);
+  font: 400 var(--fs-body)/1.75 var(--sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
-/* 数字一律等宽对齐 —— 表格能读的前提 */
+/* 数字一律等宽，右对齐时才是齐的 */
 .num, td.num, input[type="number"] {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-  border-bottom: 1px solid var(--rule-strong);
-  padding-bottom: 1px;
-}
-a:hover { border-bottom-color: var(--ink); }
+a { color: inherit; text-decoration: none; }
 
-/* 键盘可达：用墨色轮廓，不引入新颜色 */
-:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
-  border-radius: 1px;
-}
-
-::selection { background: #16181c; color: #fff; }
+:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+::selection { background: var(--ink); color: var(--paper); }
 
 /* ═══════════════════════════════════════════════════════════════
-   报头 —— 每页一致
-   ═══════════════════════════════════════════════════════════════
-   左边：产品名 + 当前页面。右边：日期和市场状态。
-   下面一条细线收口，然后就是内容 —— 不做大标题横幅。
-
-   ⚠️ 刻意不用全大写、不用字母间距。中文不需要这两样，
-      英文缩写的产品名也不需要喊出来。
+   封面 —— 全页唯一的大胆之处
    ═══════════════════════════════════════════════════════════════ */
+.cover {
+  background: var(--cover);
+  color: var(--ivory);
+}
+.cover-inner {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 30px var(--gutter) 50px;
+}
+
+/* 顶行：产品名 · 导航 · 状态 */
 .masthead {
   display: flex;
   align-items: baseline;
-  gap: 20px;
-  padding: 22px var(--gutter) 14px;
-  max-width: var(--maxw);
-  margin: 0 auto;
+  gap: 44px;
   flex-wrap: wrap;
 }
 .masthead .brand {
-  font-size: var(--fs-title);
-  font-weight: 600;
-  letter-spacing: -0.015em;
+  font-family: var(--sans);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  letter-spacing: .22em;
+  color: var(--ivory);
   margin: 0;
+  line-height: 1;
 }
-.masthead .where {
-  font-size: var(--fs-label);
-  color: var(--muted);
-}
-.masthead .meta {
-  margin-left: auto;
-  display: flex;
-  align-items: baseline;
-  gap: 18px;
-  font-size: var(--fs-label);
-  color: var(--muted);
-}
-.masthead .meta b {
-  font-weight: 600;
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
+.masthead .where { display: none; }
 
-/* 状态点：只有三种状态，颜色即语义 */
-.dot {
-  display: inline-block;
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  background: var(--ok);
-  vertical-align: 1px;
-  margin-right: 6px;
-}
-.dot.warn { background: var(--warn); }
-.dot.err  { background: var(--up); }
-
-/* ═══════════════════════════════════════════════════════════════
-   导航行 —— 一行文字，不是标签塔
-   ═══════════════════════════════════════════════════════════════ */
+/* 导航：封面里的导航是象牙小字，当前项用实心 Ivory */
 .navbar {
   display: flex;
-  gap: 22px;
+  gap: 26px;
   align-items: baseline;
-  padding: 0 var(--gutter) 14px;
-  max-width: var(--maxw);
-  margin: 0 auto;
-  border-bottom: 1px solid var(--rule);
   font-size: var(--fs-label);
   flex-wrap: wrap;
 }
 .navbar a {
-  border-bottom: none;
-  color: var(--muted);
+  color: var(--ivory-muted);
+  padding-bottom: 2px;
+  border-bottom: 1px solid transparent;
+  transition: color .15s;
 }
-.navbar a:hover { color: var(--ink); }
-.navbar a.here { color: var(--ink); font-weight: 600; }
+.navbar a:hover { color: var(--ivory); }
+.navbar a.here { color: var(--ivory); border-bottom-color: var(--ivory); }
+
+.masthead .meta {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  margin-left: auto;
+  font-size: var(--fs-label);
+  color: var(--ivory-muted);
+}
+.masthead .meta b {
+  font-weight: 400;
+  color: var(--ivory);
+  font-variant-numeric: tabular-nums;
+}
+.dot {
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #7fae94;
+  vertical-align: 1px;
+  margin-right: 6px;
+}
+.dot.warn { background: #c8a45e; }
+.dot.err  { background: #c2665f; }
+
+/* 封面主体：页名（宋体，唯一的大字号）+ 一句话定位 */
+.cover-main {
+  display: flex;
+  align-items: flex-end;
+  gap: 40px;
+  flex-wrap: wrap;
+  margin-top: 46px;
+}
+.cover-main .title {
+  font-family: var(--serif);
+  font-size: var(--fs-cover);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: .04em;
+  margin: 0;
+  color: var(--ivory);
+}
+.cover-main .lede {
+  margin: 0 0 10px auto;   /* 推到右边缘：页名和句子各占一端 */
+  text-align: left;
+  font-size: var(--fs-body);
+  line-height: 1.8;
+  color: var(--ivory-muted);
+  max-width: 42ch;
+}
+/* 封面右侧的读数（补数，不抢页名） */
+.cover-figures {
+  display: flex;
+  gap: 44px;
+  margin-left: auto;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.cover-figures .fig { min-width: 0; }
+.cover-figures .fig .k {
+  display: block;
+  font-size: var(--fs-label);
+  color: var(--ivory-muted);
+  margin-bottom: 7px;
+}
+.cover-figures .fig .v {
+  font-family: var(--serif);
+  font-size: var(--fs-big);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--ivory);
+  font-variant-numeric: tabular-nums;
+}
+.cover-figures .fig .v.up { color: #d99a93; }
+.cover-figures .fig .v.dn { color: #8fbfa9; }
 
 /* ═══════════════════════════════════════════════════════════════
-   内容容器
+   报表面 —— 白纸
+   ═══════════════════════════════════════════════════════════════
+   ⚠️ 不是灰底白卡，就是白纸。封面和报表的边界来自颜色，不来自边框。
    ═══════════════════════════════════════════════════════════════ */
 .wrap, #wrap {
   max-width: var(--maxw);
   margin: 0 auto;
-  padding: var(--gutter) var(--gutter) 72px;
+  padding: 64px var(--gutter) 120px;
+  background: var(--paper);
   display: grid;
-  gap: 36px;                  /* 区块之间靠留白分组，不画线 */
+  gap: var(--section);
 }
 
 /* ═══════════════════════════════════════════════════════════════
    区块
    ═══════════════════════════════════════════════════════════════
-   ⚠️ `.card` 这个名字保留（老标记里到处是），但它**不再是卡片**：
-      没有背景、没有边框、没有圆角、没有阴影。
-      只是一个带标题的区块。改样式不改结构，是为了不在 HTML 里
-      做大范围重命名 —— 那样容易把 JS 里引用的 id/class 弄坏。
+   `.card` 这个名字保留（老标记和 JS 都依赖），但它只是一段内容：
+   没有背景、没有边框、没有圆角、没有阴影。
    ═══════════════════════════════════════════════════════════════ */
 .card {
   background: none;
@@ -220,80 +279,60 @@ a:hover { border-bottom-color: var(--ink); }
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
-  margin: 0 0 14px;
+  margin: 0 0 30px;
   padding: 0;
   border: none;
-  font-size: var(--fs-section);
-  font-weight: 600;
+  font-family: var(--sans);
+  font-size: var(--fs-title);
+  font-weight: 500;
   color: var(--ink);
-  letter-spacing: 0;
 }
-/* 区块标题右侧的补充信息：小一号、次要色，不抢标题 */
-.card > h2 .mut,
-.card > h2 .warn {
+.card > h2 .mut, .card > h2 .warn {
   font-size: var(--fs-label);
   font-weight: 400;
   color: var(--muted);
 }
-.card > h2 .warn { color: var(--warn); }
+.card > h2 .warn { color: var(--muted); }
 .card > .body { padding: 0; }
 
-/* 区块内的小标题（表格前的说明等） */
-.subhead {
-  font-size: var(--fs-label);
-  color: var(--muted);
-  margin: 0 0 10px;
-}
+.subhead { font-size: var(--fs-label); color: var(--muted); margin: 0 0 18px; }
 
 /* ═══════════════════════════════════════════════════════════════
-   读数块 —— 页面上最重要的数字
-   ═══════════════════════════════════════════════════════════════
-   不是「大数字 + 小标签 + 渐变」那套默认做法。
-   这里数字大是因为**它就是内容**，标签小到刚好能读。
+   读数
    ═══════════════════════════════════════════════════════════════ */
-.readout {
-  display: flex;
-  align-items: baseline;
-  gap: 28px;
-  flex-wrap: wrap;
-}
+.readout { display: flex; align-items: baseline; gap: 64px; flex-wrap: wrap; }
 .readout .item { min-width: 0; }
 .readout .k {
   display: block;
   font-size: var(--fs-label);
   color: var(--muted);
-  margin-bottom: 2px;
+  margin-bottom: 10px;
 }
 .readout .v {
   display: block;
-  font-size: var(--fs-readout);
-  font-weight: 600;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
+  font-family: var(--serif);
+  font-size: var(--fs-hero);
+  font-weight: 400;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
-.readout .v.sm { font-size: var(--fs-big); }
-.readout .u {
-  font-size: var(--fs-small);
-  color: var(--muted);
-  font-weight: 400;
-  margin-left: 3px;
-}
+.readout .u { font-family: var(--sans); font-size: var(--fs-small); color: var(--muted); margin-left: 4px; }
 
-/* 涨跌色：只在数字上，不在容器上 */
+/* 语义色 */
 .up { color: var(--up); }
 .dn { color: var(--down); }
+.pos { color: var(--up); }
+.neg { color: var(--down); }
 .wn { color: var(--warn); }
-.ok { color: var(--ok); }
+.ok { color: var(--down); }
 .mut { color: var(--muted); }
 .dim { color: var(--faint); }
 
 /* ═══════════════════════════════════════════════════════════════
-   表格 —— 全站数据的主要载体
+   表格 —— 报表的主体
    ═══════════════════════════════════════════════════════════════
-   行线编码「这是一条记录」，所以有。
-   表格不出边框、不画竖线 —— 竖线会和数字对齐打架。
-   表头粘顶，长表格滚动时列名还在。
+   行高 46px。只有横向行线，没有竖线。数字右对齐等宽。
+   表头不做底色、不做大写，只是灰色小字。
    ═══════════════════════════════════════════════════════════════ */
 table {
   width: 100%;
@@ -302,9 +341,10 @@ table {
 }
 th, td {
   text-align: right;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--rule);
+  padding: 14px 14px;
+  border-bottom: 1px solid var(--line);
   white-space: nowrap;
+  vertical-align: baseline;
 }
 th {
   position: sticky;
@@ -314,42 +354,42 @@ th {
   color: var(--muted);
   font-weight: 400;
   font-size: var(--fs-label);
-  border-bottom: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--line);
   text-align: right;
 }
 th:first-child, td:first-child { text-align: left; padding-left: 0; }
 th:last-child, td:last-child { padding-right: 0; }
-tbody tr:hover { background: var(--paper-soft); }
+tbody tr { transition: background .12s; }
+tbody tr:hover { background: #fafafa; }
 tbody tr:last-child td { border-bottom: none; }
 td.num { font-variant-numeric: tabular-nums; }
+tr.sel { background: #f7f7f5; }
+tr.sel td { font-weight: 500; }
 
-.tablewrap { overflow: auto; max-height: 640px; }
+.tablewrap { overflow: auto; max-height: 680px; }
+.tablewrap table { min-width: 100%; }
 
 /* ═══════════════════════════════════════════════════════════════
-   表单
-   ═══════════════════════════════════════════════════════════════
-   输入框是唯一带圆角的东西 —— 它们确实是「可操作的控件」，
-   和纸面上的数据区分开是合理的。
+   表单 —— 唯一带圆角的东西（它们真的可操作）
    ═══════════════════════════════════════════════════════════════ */
 select, input, button, textarea {
   font: inherit;
   font-size: var(--fs-small);
   color: var(--ink);
   background: var(--paper);
-  border: 1px solid var(--rule-strong);
-  border-radius: var(--radius);
-  padding: 5px 9px;
+  border: 1px solid #d9d9d5;
+  border-radius: 3px;
+  padding: 8px 12px;
 }
 input::placeholder { color: var(--faint); }
 select:focus, input:focus, button:focus, textarea:focus {
-  outline: 2px solid var(--ink);
-  outline-offset: 1px;
+  outline: none;
   border-color: var(--ink);
+  box-shadow: 0 0 0 1px var(--ink);
 }
-button { cursor: pointer; background: var(--paper); }
-button:hover { border-color: var(--ink); }
-button:disabled { color: var(--faint); border-color: var(--rule); cursor: not-allowed; }
-/* 主按钮：实心墨色。不用品牌色 —— 这个工具没有品牌色 */
+button { cursor: pointer; }
+button:hover { border-color: var(--ink-2); }
+button:disabled { color: var(--faint); border-color: var(--line); cursor: not-allowed; }
 button.primary {
   background: var(--ink);
   border-color: var(--ink);
@@ -358,169 +398,247 @@ button.primary {
 button.primary:hover { background: #000; border-color: #000; }
 button.primary:disabled { background: var(--faint); border-color: var(--faint); color: #fff; }
 
-/* 控件行 */
-.row {
-  display: flex;
-  gap: 14px;
-  align-items: flex-end;
-  flex-wrap: wrap;
-}
+.row { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
 label.f {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
   font-size: var(--fs-label);
   color: var(--muted);
 }
 .spacer { flex: 1; }
 
 /* ═══════════════════════════════════════════════════════════════
-   标签页 / 分段选择
-   ═══════════════════════════════════════════════════════════════
-   用下划线指示当前项，不用胶囊背景 —— 胶囊会把一行文字
-   变成一排彩色块，视觉噪音太大。
+   标签页
    ═══════════════════════════════════════════════════════════════ */
 .tabs {
   display: flex;
-  gap: 20px;
-  border-bottom: 1px solid var(--rule);
-  margin-bottom: 18px;
+  gap: 30px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 30px;
   flex-wrap: wrap;
 }
-.tabs .tab {
-  padding: 7px 0 9px;
+.tabs .tab, .tabs button {
+  padding: 8px 0 12px;
   font-size: var(--fs-small);
   color: var(--muted);
   cursor: pointer;
+  border: none;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   background: none;
-  border-top: none;
-  border-left: none;
-  border-right: none;
   border-radius: 0;
 }
-.tabs .tab:hover { color: var(--ink); }
-.tabs .tab.on {
-  color: var(--ink);
-  font-weight: 600;
-  border-bottom-color: var(--ink);
-}
+.tabs .tab:hover, .tabs button:hover { color: var(--ink); }
+.tabs .tab.on, .tabs button.act { color: var(--ink); border-bottom-color: var(--ink); }
 
 /* ═══════════════════════════════════════════════════════════════
-   状态标记
-   ═══════════════════════════════════════════════════════════════
-   极简：纯文字 + 一个色点。不做圆角胶囊、不做浅色底。
+   状态与标签 —— 纯文字，不用胶囊、不用填充
    ═══════════════════════════════════════════════════════════════ */
-.tag {
+.tag { display: inline-block; font-size: var(--fs-label); color: var(--muted); }
+.tag + .tag::before { content: "·"; color: var(--faint); margin: 0 4px; }
+.pill { display: inline-flex; align-items: center; font-size: var(--fs-label); color: var(--muted); }
+.kv { font-size: var(--fs-label); color: var(--muted); }
+.badge {
+  display: inline-block;
+  font-size: 10px;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 0 5px;
+  margin-left: 7px;
+  vertical-align: 1px;
+}
+/* 标签：预设标的、因子名这类。
+   ⚠️ 不要给下划线 —— 几十个连在一起会变成一堵「下划线文字墙」。
+      决策页有 40 个预设标的，之前就是这个毛病。 */
+.chip {
   display: inline-block;
   font-size: var(--fs-label);
   color: var(--muted);
-  border: none;
-  background: none;
-  padding: 0;
+  white-space: nowrap;
 }
-.tag + .tag::before { content: "，"; color: var(--faint); }
+.chip:hover { color: var(--ink); }
 
-/* 状态药丸（页头用）：文字 + 点，不用底色 */
-.pill {
-  display: inline-flex;
-  align-items: center;
-  font-size: var(--fs-label);
-  color: var(--muted);
-  background: none;
-  border: none;
-  padding: 0;
+/* 预设标的行：一排、可横向滚动，不换行堆成墙 */
+.picked {
+  display: flex;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: 22px;
+  align-items: baseline;
+  padding: 2px 0 10px;
+  scrollbar-width: thin;
 }
-
-.kv { font-size: var(--fs-label); color: var(--muted); }
+.picked .chip { flex: 0 0 auto; }
 
 /* ═══════════════════════════════════════════════════════════════
    说明文字
-   ═══════════════════════════════════════════════════════════════
-   去掉浅色底 + 左边框那套。就用小字 + 缩进 + 左侧留白，
-   和正文同一个面，读起来是「注解」而不是「警告框」。
    ═══════════════════════════════════════════════════════════════ */
 .note {
   font-size: var(--fs-small);
-  line-height: 1.85;
+  line-height: 2;
   color: var(--muted);
   background: none;
   border: none;
-  border-radius: 0;
   padding: 0;
-  max-width: 78ch;
+  max-width: 74ch;
 }
-.note b, .note strong { color: var(--ink); font-weight: 600; }
-.note.warn, .note.ok {
-  background: none;
-  border-left: none;
-  padding: 0;
-}
+.note b, .note strong { color: var(--ink-2); font-weight: 500; }
 .note code {
-  font-family: inherit;
-  background: var(--paper-soft);
+  font-family: var(--sans);
+  background: #f5f5f3;
   padding: 1px 5px;
   border-radius: 2px;
-  font-size: 0.95em;
+  font-size: .94em;
+}
+.warn-item {
+  font-size: var(--fs-small);
+  color: var(--warn);
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   画布容器
+   画布
    ═══════════════════════════════════════════════════════════════ */
 .chartbox { position: relative; }
 canvas { display: block; width: 100%; }
 
 /* ═══════════════════════════════════════════════════════════════
-   两栏 / 三栏布局
+   网格
    ═══════════════════════════════════════════════════════════════ */
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 64px; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 48px; }
+.grid2 > *, .grid3 > * { min-width: 0; }
 .split {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
-  gap: 36px;
-  align-items: start;
-}
-.split-3 {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
-  gap: 32px;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 64px;
   align-items: start;
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   错误条
+   兼容层 —— JS 动态生成的类，名字不动，只换视觉语言
    ═══════════════════════════════════════════════════════════════ */
+
+/* 行情报价 */
+.quote { display: flex; gap: 72px; align-items: flex-start; flex-wrap: wrap; }
+.quote .lead { display: flex; flex-direction: column; }
+.quote .lead .name { font-size: var(--fs-label); color: var(--muted); margin-bottom: 14px; }
+.quote .lead .price {
+  font-family: var(--serif);
+  font-size: 54px;
+  font-weight: 400;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.quote .lead .chg {
+  font-size: var(--fs-body);
+  font-variant-numeric: tabular-nums;
+  margin-top: 14px;
+}
+.quote .stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: 26px 40px;
+  flex: 1;
+  min-width: 340px;
+  padding-top: 2px;
+}
+.quote .kv { display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-small); }
+.quote .kv span:first-child { color: var(--muted); font-size: var(--fs-label); }
+.quote .kv b, .quote .kv span:last-child {
+  font-weight: 400;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 指标行：靠留白分栏，不用竖线 */
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 34px 40px;
+}
+.metric { background: none; border: none; border-radius: 0; padding: 0; }
+.metric .k { color: var(--muted); font-size: var(--fs-label); display: block; margin-bottom: 9px; }
+.metric .v {
+  font-family: var(--serif);
+  font-size: var(--fs-big);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+/* 日志 */
+.log { max-height: 320px; overflow: auto; font-size: var(--fs-small); }
+.log > div {
+  display: flex; gap: 20px; padding: 12px 0;
+  border-bottom: 1px solid var(--line); align-items: baseline;
+}
+.log > div:last-child { border-bottom: none; }
+.log .t { color: var(--muted); min-width: 148px; font-variant-numeric: tabular-nums; }
+.log .kind { min-width: 52px; color: var(--ink-2); }
+
+/* 图例 */
+.legend {
+  display: flex; gap: 24px; flex-wrap: wrap;
+  font-size: var(--fs-label); color: var(--muted); margin-top: 16px;
+}
+.legend i { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 6px; }
+
+#wrap.stale, .stale { opacity: .45; transition: opacity .2s; }
+
+#tip, .chart-tooltip { box-shadow: 0 16px 48px rgba(23, 26, 30, .12); }
+
+#empty, .empty { color: var(--muted); font-size: var(--fs-small); line-height: 2; max-width: 54ch; }
+
+/* 操作反馈 */
+.toast {
+  position: fixed;
+  right: 36px;
+  bottom: 36px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: var(--fs-small);
+  padding: 13px 20px;
+  border-radius: 2px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity .18s, transform .18s;
+  pointer-events: none;
+  z-index: 100;
+  max-width: 380px;
+}
+.toast.on { opacity: 1; transform: translateY(0); }
+
 #err {
   display: none;
   max-width: var(--maxw);
-  margin: 0 auto 18px;
-  padding: 0 var(--gutter);
+  margin: 0 auto;
+  padding: 24px var(--gutter) 0;
   color: var(--up);
   font-size: var(--fs-small);
   white-space: pre-wrap;
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   加载态
-   ═══════════════════════════════════════════════════════════════ */
 .spin {
   display: inline-block;
-  width: 10px; height: 10px;
-  border: 1.5px solid var(--rule-strong);
+  width: 9px; height: 9px;
+  border: 1px solid var(--line);
   border-top-color: var(--ink);
   border-radius: 50%;
-  animation: sp 0.7s linear infinite;
+  animation: sp .7s linear infinite;
   vertical-align: -1px;
-  margin-right: 7px;
+  margin-right: 8px;
 }
 @keyframes sp { to { transform: rotate(360deg); } }
 
-/* 减少动效偏好：这是无障碍底线，不是可选项 */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
-    animation-duration: 0.01ms !important;
+    animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
+    transition-duration: .01ms !important;
   }
 }
 
@@ -528,231 +646,24 @@ canvas { display: block; width: 100%; }
    窄屏
    ═══════════════════════════════════════════════════════════════ */
 @media (max-width: 1080px) {
-  .split, .split-3 { grid-template-columns: minmax(0, 1fr); gap: 28px; }
-  :root { --fs-readout: 34px; --fs-big: 22px; --gutter: 18px; }
+  :root { --gutter: 36px; --fs-cover: 52px; --fs-hero: 34px; --fs-big: 23px; --section: 56px; }
+  .cover-inner { padding-bottom: 46px; }
+  .cover-main { margin-top: 44px; gap: 24px; }
+  .cover-figures { margin-left: 0; gap: 32px; }
+  .split { grid-template-columns: minmax(0, 1fr); gap: 44px; }
+  .grid2, .grid3 { gap: 44px; }
+  .quote .lead .price { font-size: 42px; }
 }
 @media (max-width: 720px) {
-  :root { --fs-readout: 28px; --gutter: 14px; --fs-title: 17px; }
-  .masthead { padding-top: 16px; }
-  th, td { padding: 6px 8px; }
-  /* 手机上表格横向滚动，不拆行 */
+  :root { --gutter: 22px; --fs-cover: 38px; --fs-hero: 28px; --fs-big: 21px; --section: 44px; --fs-body: 13.5px; }
+  .cover-inner { padding-top: 22px; padding-bottom: 38px; }
+  .masthead { gap: 18px; }
+  .masthead .meta { margin-left: 0; }
+  .navbar { gap: 18px; }
+  .cover-main { margin-top: 36px; }
+  .wrap, #wrap { padding-top: 44px; padding-bottom: 72px; }
+  th, td { padding: 11px 9px; }
   .tablewrap { max-height: none; }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   兼容层 —— 老标记里的类名
-   ═══════════════════════════════════════════════════════════════
-   各页的 JS 会生成这些 class，重命名要同步改 JS，风险大于收益。
-   所以保留名字，只改定义 —— 名称是历史包袱，视觉是当下的。
-   ═══════════════════════════════════════════════════════════════ */
-
-/* 涨跌别名（老页面用 .pos/.neg） */
-.pos { color: var(--up); }
-.neg { color: var(--down); }
-
-/* 网格助手 */
-.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; }
-.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px; }
-.grid2 > *, .grid3 > * { min-width: 0; }
-@media (max-width: 1180px) { .grid2, .grid3 { grid-template-columns: minmax(0, 1fr); } }
-
-/* 表格选中行 */
-tr.sel { background: var(--paper-soft); }
-tr.sel td { font-weight: 600; }
-
-/* ═══════════════════════════════════════════════════════════════
-   实时报价块
-   ═══════════════════════════════════════════════════════════════
-   左边价格独占一栏（它回答「现在多少钱」），右边 OHLC 排成网格。
-   价格和涨跌额放在同一栏里上下排列 —— 它们是一件事的两个面，
-   分开排会让人先读到一个大数字、再去找它涨了还是跌了。
-
-   ⚠️ 第一版把涨跌额设成比价格还大，层级反了：眼睛先看到 -504，
-      再去找 81652 是什么。价格是主，涨跌是注。
-   ═══════════════════════════════════════════════════════════════ */
-.quote {
-  display: flex;
-  gap: 48px;
-  align-items: flex-start;
-  flex-wrap: wrap;
-  padding-bottom: 2px;
-}
-.quote .lead { display: flex; flex-direction: column; gap: 1px; }
-.quote .lead .name {
-  font-size: var(--fs-label);
-  color: var(--muted);
-  margin-bottom: 3px;
-}
-.quote .lead .price {
-  font-size: var(--fs-readout);
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: -0.025em;
-  font-variant-numeric: tabular-nums;
-}
-.quote .lead .chg {
-  font-size: var(--fs-body);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  margin-top: 5px;
-}
-/* 右侧统计：两行网格，标签在上值在下，值一律等宽右对齐 */
-.quote .stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
-  gap: 12px 24px;
-  flex: 1;
-  min-width: 280px;
-  padding-top: 3px;
-  border-top: 1px solid var(--rule);
-}
-.quote .kv { display: flex; flex-direction: column; gap: 1px; }
-.quote .kv span:first-child {
-  color: var(--muted);
-  font-size: var(--fs-label);
-  font-weight: 400;
-}
-.quote .kv b, .quote .kv span:last-child {
-  font-size: var(--fs-small);
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 指标行：上边一条细线标记「一组读数」，不用小盒子 */
-.metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 0;
-  border-top: 1px solid var(--rule);
-}
-.metric {
-  background: none;
-  border: none;
-  border-radius: 0;
-  padding: 10px 16px 10px 0;
-  border-right: 1px solid var(--rule);
-}
-.metric:last-child { border-right: none; }
-.metric .k { color: var(--muted); font-size: var(--fs-label); display: block; margin-bottom: 2px; }
-.metric .v {
-  font-size: var(--fs-big);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
-}
-
-/* 日志：时间戳等宽对齐，类型用字重区分而非彩色标签 */
-.log { max-height: 280px; overflow: auto; font-size: var(--fs-small); }
-.log > div {
-  display: flex; gap: 14px; padding: 5px 0;
-  border-bottom: 1px solid var(--rule); align-items: baseline;
-}
-.log > div:last-child { border-bottom: none; }
-.log .t { color: var(--muted); min-width: 132px; font-variant-numeric: tabular-nums; }
-.log .kind { min-width: 48px; color: var(--ink-2); }
-
-/* 图例 */
-.legend {
-  display: flex; gap: 16px; flex-wrap: wrap;
-  font-size: var(--fs-label); color: var(--muted); margin-top: 8px;
-}
-.legend i { display: inline-block; width: 10px; height: 2px; vertical-align: middle; margin-right: 5px; }
-
-/* 取数失败时把整块数据标灰 —— 防止把过期数字当成当前值读 */
-#wrap.stale, .stale { opacity: 0.5; transition: opacity 0.2s; }
-/* ═══════════════════════════════════════════════════════════════
-   搜索候选列表（选股页、驾驶舱、图表页共用）
-   ═══════════════════════════════════════════════════════════════
-   浮层用一条细边 + 极淡阴影（浮层确实需要和下面的纸面区分开，
-   这是唯一允许有阴影的地方 —— 因为它真的是浮起来的）。
-   ═══════════════════════════════════════════════════════════════ */
-.results {
-  display: none;
-  margin-top: 8px;
-  border: 1px solid var(--rule-strong);
-  background: var(--paper);
-  box-shadow: 0 6px 20px rgba(16, 24, 40, 0.07);
-  max-height: 240px;
-  overflow: auto;
-}
-.results.on { display: block; }
-.results .it {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 7px 12px;
-  border-bottom: 1px solid var(--rule);
-  font-size: var(--fs-small);
-  cursor: pointer;
-  align-items: baseline;
-}
-.results .it:last-child { border-bottom: none; }
-.results .it:hover { background: var(--paper-soft); }
-.results .it b { font-weight: 500; }
-.results .it .px {
-  color: var(--muted);
-  font-size: var(--fs-label);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-.results .it .px i { font-style: normal; color: var(--ink); }
-
-/* 已选标的 */
-.picked { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
-.chip {
-  font-size: var(--fs-label);
-  color: var(--muted);
-  border: 1px solid var(--rule);
-  border-radius: 2px;
-  padding: 2px 9px;
-  cursor: pointer;
-  white-space: nowrap;
-  background: none;
-}
-.chip:hover { border-color: var(--ink); color: var(--ink); }
-.chip.cur { border-color: var(--ink); color: var(--ink); font-weight: 600; }
-
-/* 空状态：不是「什么都没有」，是邀请用户做下一步 */
-#empty, .empty {
-  color: var(--muted);
-  font-size: var(--fs-small);
-  line-height: 1.9;
-  max-width: 60ch;
-}
-
-/* 操作反馈（保存/下单等） */
-.toast {
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  background: var(--ink);
-  color: var(--paper);
-  font-size: var(--fs-small);
-  padding: 9px 16px;
-  border-radius: 2px;
-  opacity: 0;
-  transform: translateY(6px);
-  transition: opacity 0.18s, transform 0.18s;
-  pointer-events: none;
-  z-index: 100;
-  max-width: 360px;
-}
-.toast.on { opacity: 1; transform: translateY(0); }
-
-/* 提示条（warn-item / badge） */
-.warn-item {
-  font-size: var(--fs-small);
-  color: var(--warn);
-  padding: 5px 0;
-  border-bottom: 1px solid var(--rule);
-}
-.badge {
-  display: inline-block;
-  font-size: var(--fs-label);
-  color: var(--muted);
-  border: 1px solid var(--rule);
-  border-radius: 2px;
-  padding: 0 6px;
-  margin-left: 8px;
+  .quote .lead .price { font-size: 34px; }
+  .quote .stats { min-width: 0; }
 }

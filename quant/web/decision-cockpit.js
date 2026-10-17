@@ -50,15 +50,15 @@ const easeOut = t => 1 - Math.pow(1 - t, 3);
 
 const C = {
   // 亮色主题：canvas 底色是白卡片，文字/线条都要在白底上够深
-  bg: '#ffffff', panel: '#ffffff', border: '#e4e7ea',
-  muted: '#737a82', text: '#16181c', dim: '#9aa1a9',
-  bull: '#c0322a',      // 看多（红涨）
-  bear: '#1c6e56',      // 看空
-  flat: '#9aa1a9',
-  accent: '#c0322a',    // 强调 / 阈值线
-  ok: '#1c6e56',
-  warn: '#8a6100',
-  rule: 'rgba(22,24,28,.18)',   // 零线/合计线（白底上用深色半透明）
+  bg: '#ffffff', panel: '#ffffff', border: '#e6e6e3',
+  muted: '#7c848a', text: '#171a1e', dim: '#a9afb4',
+  bull: '#a02a24',      // 看多（酒红）
+  bear: '#2e6152',      // 看空（松绿）
+  flat: '#a9afb4',
+  accent: '#171a1e',    // 阈值线用墨色 —— 红色是数据，不能拿来当标尺
+  ok: '#2e6152',
+  warn: '#7a5c1e',
+  rule: 'rgba(23,26,30,.16)',   // 零线/合计线
 };
 
 // 动画阶段（秒）。总长约 2.6s，比上一版的 4s 短 ——

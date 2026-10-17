@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>选股 · 量化工作台</title>
+<title>选股 ｜ 量化工作台</title>
 <link rel="stylesheet" href="/theme.css" />
   <style>
     /* 本页专属 */
@@ -16,7 +16,7 @@
     .st {
       padding: 11px 0 12px;
       border-bottom: 1px solid var(--rule);
-      border-left: 2px solid transparent;
+      border-left: 1px solid transparent;
       cursor: pointer;
       padding-left: 12px;
     }
@@ -59,7 +59,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .sector-bar { display: block; height: 6px; background: #f0f2f4; }
+    .sector-bar { display: block; height: 6px; background: #f2f2f0; }
     .sector-bar i { display: block; height: 100%; background: var(--ink-2); }
     /* 行业分布条 */
     .bar { display: inline-block; height: 8px; border-radius: 0; vertical-align: middle; }
@@ -89,22 +89,28 @@
 </head>
 <body>
 
-<header class="masthead">
+<div class="cover">
+  <div class="cover-inner">
+  <header class="masthead">
     <h1 class="brand">选股</h1>
-    <span class="where">全市场过滤 · 横截面排序 · AI 复核</span>
+        <nav class="navbar">
+      <a href="/">看板</a>
+      <a href="/heatmap.html">云图</a>
+      <a href="/screen.html" class="here">选股</a>
+      <a href="/decision.html">决策驾驶舱</a>
+      <a href="/pro.html">专业图表</a>
+      <a href="/paper.html">模拟盘</a>
+    </nav>
     <div class="meta">
       <span><span class="dot" id="dot"></span><span id="status">就绪</span></span>
     </div>
   </header>
-
-  <nav class="navbar">
-    <a href="/">看板</a>
-    <a href="/screen.html" class="here">选股</a>
-    <a href="/heatmap.html">云图</a>
-    <a href="/decision.html">决策驾驶舱</a>
-    <a href="/pro.html">专业图表</a>
-    <a href="/paper.html">模拟盘</a>
-  </nav>
+  <div class="cover-main">
+    <h2 class="title">选股</h2>
+    <p class="lede">三层漏斗把全市场筛成一份名单，再由 AI 复核。</p>
+  </div>
+  </div>
+</div>
 <div id="err"></div>
 
 <div id="wrap">
@@ -176,7 +182,7 @@
 
   <!-- AI 组合：把选股结果建成模拟盘组合，跟踪收益 -->
   <div class="card" id="pfCard">
-    <h2><span>AI 组合 · 看收益</span><span class="mut" id="pfMeta">—</span></h2>
+    <h2><span>AI 组合 看收益</span><span class="mut" id="pfMeta">—</span></h2>
     <div class="body" id="pfBody">
       <div class="note ok" style="margin:0">
         <b>把选出的股票建成一个组合，跟踪它到底赚不赚钱。</b><br>

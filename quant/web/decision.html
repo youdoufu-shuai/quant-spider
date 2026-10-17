@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>决策驾驶舱 · 量化工作台</title>
+<title>决策驾驶舱 ｜ 量化工作台</title>
 <link rel="stylesheet" href="/theme.css" />
   <style>
     /* 本页专属 */
@@ -49,7 +49,7 @@
       align-items: center;
       padding: 10px 0 10px 12px;
       border-bottom: 1px solid var(--rule);
-      border-left: 2px solid var(--rule-strong);
+      border-left: 1px solid var(--rule-strong);
       font-size: var(--fs-small);
     }
     .flip .it.done { border-left-color: var(--ok); }
@@ -64,22 +64,28 @@
 </head>
 <body>
 
-<header class="masthead">
+<div class="cover">
+  <div class="cover-inner">
+  <header class="masthead">
     <h1 class="brand">决策驾驶舱</h1>
-    <span class="where">结论 · 依据 · 什么会改变结论</span>
+        <nav class="navbar">
+      <a href="/">看板</a>
+      <a href="/heatmap.html">云图</a>
+      <a href="/screen.html">选股</a>
+      <a href="/decision.html" class="here">决策驾驶舱</a>
+      <a href="/pro.html">专业图表</a>
+      <a href="/paper.html">模拟盘</a>
+    </nav>
     <div class="meta">
       <span><span class="dot" id="dot"></span><span id="status">加载中…</span></span>
     </div>
   </header>
-
-  <nav class="navbar">
-    <a href="/">看板</a>
-    <a href="/screen.html">选股</a>
-    <a href="/decision.html" class="here">决策驾驶舱</a>
-    <a href="/heatmap.html">云图</a>
-    <a href="/pro.html">专业图表</a>
-    <a href="/paper.html">模拟盘</a>
-  </nav>
+  <div class="cover-main">
+    <h2 class="title">决策驾驶舱</h2>
+    <p class="lede">把结论拆成因子贡献与风控闸门，看它为什么成立。</p>
+  </div>
+  </div>
+</div>
 <div id="err"></div>
 
 <div id="wrap">
