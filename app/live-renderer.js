@@ -11,6 +11,7 @@ export class LiveRenderer {
     // 蜘蛛的平滑状态。为什么存在渲染器上：位置要靠「上一帧」算速度，
     // 而速度决定腿部步态 —— 没有上一帧，腿就没法跟着真实移动走。
     this.spiderPos=null;this.spiderT=null;this.spiderMoving=false;
+    this.trail=[];this.lastPage=null;this.lastFocusKey=null;this.reactAt=-99;
     this.handleClick=event=>{const id=this.hitTest(event.clientX,event.clientY);if(id!==null)onSelect?.(id);};
     canvas.addEventListener('click',this.handleClick);
   }
@@ -39,14 +40,32 @@ export class LiveRenderer {
     const scene=layout.scene;this.panel(scene,config.unit==='word'?'PROMPT / TOKEN STREAM':'AGENT / TASK STREAM',theme,`PAGE ${page+1} · ${view.totalEvents} EVENTS`);
     c.save();c.beginPath();c.rect(scene.x+1,scene.y+31,scene.w-2,scene.h-32);c.clip();
     this.regions=eventPlacement(layout,view.events).filter(x=>routeFilter==='all'||x.event.route===routeFilter);
-    this.web(view,time,reducedMotion,selectedId);
+    // 蜘蛛的位置要先算出来：web() 里的探针要用它当根部，
+    // 而蜘蛛本体必须画在文字**上面**（原项目里它就是趴在字上的）。
+    if(page!==this.lastPage){this.trail=[];this.lastPage=page;}
+    const focus=this.focusPoint();
+    // 焦点换了（Agent 推进到新的一步）：记一次脉冲 + 把这一行记进丝囊轨迹
+    if(focus && this.lastFocusKey!==null && focus.key!==this.lastFocusKey){
+      this.reactAt=time;
+      this.trail.push({x:focus.x,y:focus.y});
+      if(this.trail.length>24)this.trail.shift();
+    }
+    this.lastFocusKey=focus?.key??null;
+    const body=this.stepSpider(focus,time,reducedMotion);
+    this.web(view,time,reducedMotion,selectedId,body,focus);
     for(const region of this.regions){
       const {event,x,y,w,h}=region,color=config.routes[event.route].color,selected=event.id===selectedId;
-      if(selected||event.status==='running'){c.fillStyle=alpha(selected?theme.accent:color,.13);c.fillRect(x-6,y-h/2,w+8,h);}
+      const isFocus=focus?.key===event.id;
+      // 已完成 = 已被蜘蛛吃过 → 留一层极淡的分支色底（对应原项目里亮起的词块）
+      if(event.status==='completed'){c.fillStyle=alpha(color,.07);c.fillRect(x-6,y-h/2,w+8,h);}
+      if(selected||event.status==='running'||isFocus){c.fillStyle=alpha(selected?theme.accent:color,isFocus?.20:.13);c.fillRect(x-6,y-h/2,w+8,h);}
       this.text(String(event.order??region.index+1).padStart(3,'0'),x,y+4,theme.muted,9);
       this.text(this.label(event.displayLabel??event.label,w-64),x+35,y+4,color,11);
       c.fillStyle=event.status==='failed'?theme.accent:color;c.globalAlpha=event.status==='pending'?.35:1;c.fillRect(x+w-12,y-3,5,5);c.globalAlpha=1;
     }
+    // 蜘蛛画在文字之上 —— 它是「趴在这一行上」的，压在标签尾部，
+    // 和原项目里趴在 prompt 文字上是同一种观感。
+    this.spider(body,time,reducedMotion,theme,focus);
     if(!view.totalEvents){this.text('等待 Agent 上报第一个事件',scene.x+30,scene.y+93,theme.text,16);this.text('每一次真实步骤，都会在这里结成一张网。',scene.x+30,scene.y+121,theme.muted,11);}
     c.restore();
     if(layout.stream)this.stream(view,layout.stream,theme);
@@ -61,37 +80,32 @@ export class LiveRenderer {
     this.text(spiderText,layout.width-40,layout.height-18,theme.muted,10,'right');
   }
   // ══════════════════════════════════════════════════════════════
-  //  蜘蛛 = Agent 的当前注意力焦点
+  //  蜘蛛 = 在事件流里爬，吃掉当前这一步
   // ══════════════════════════════════════════════════════════════
-  // 之前的问题：livePose() 只吃 time，蜘蛛沿固定椭圆匀速绕圈，
-  // 16 秒一圈 —— 跟 Agent 在干什么完全无关。腿一直在走，是因为
-  // 它一直在动，不是因为有活干。所以看起来「只是爬来爬去」。
+  // 第一版是匀速绕圈的纯装饰（time 是唯一输入），看起来「只是爬来爬去」。
+  // 第二版改成坐在丝的中点，有了语义但不动 —— 还是不像原项目。
   //
-  // 现在的语义：
-  //   位置 = 当前「进行中」那一步拉出的丝上（没有就取最后一步）
-  //   移动 = 平滑趋近目标；移动产生速度 → 腿才迈步
-  //   静止 = 到位后速度归零 → 腿停下（Agent 没在推进时不假装在动）
-  //   快慢 = 有进行中的步骤时追得急，否则慢慢挪
+  // 原项目里蜘蛛是「引擎」：它趴在 prompt 的文字上爬，爬到哪个词，
+  // 那个词就被吃掉、亮起分支色、拉出一条丝飞向分支框。
+  // 现在把同样的关系搬到事件流上：
   //
-  // 这样蜘蛛的每一个动作都能对上真实状态：新步骤来 → 它挪过去；
-  // Agent 卡住/等待 → 它停在原地不动。
+  //   位置 = 当前那一步的**事件行**上（压在标签尾部，像趴在字上）
+  //   移动 = 每来一步，它往下爬一行 —— 速度驱动腿部步态，是真在走
+  //   静止 = 没有新步骤时不假装在动（速度归零，腿停）
+  //   吃   = 到达一行时，该行高亮，token 从它身上飞向分支（web() 里的探针）
+  //   丝   = 身后拖一条丝，把走过的行串起来
   focusPoint() {
     const regions = this.regions;
     if (!regions.length) return null;
     const running = regions.find((r) => r.event.status === 'running');
     const region = running || regions[regions.length - 1];
-    const s = this.layout.scene;
-    const target = routeTarget(this.layout, region.event.route);
-    // 沿着这条事件丝取一点（贝塞尔 t=0.62）—— 那是空白区，
-    // 不会压在左边的事件文字上，也不在右侧分支卡里面。
-    const p0x = region.x + region.w, p0y = region.y;
-    const p1x = s.x + s.w * .52, p1y = region.y;
-    const p2x = s.x + s.w * .66, p2y = target.y;
-    const p3x = target.x, p3y = target.y;
-    const t = .62, q = 1 - t;
+    // 趴在事件行的**尾部**：压在标签文字上（和原项目趴在词上一致），
+    // 但避开右侧那个状态色点，别把它盖掉。
     return {
-      x: q * q * q * p0x + 3 * q * q * t * p1x + 3 * q * t * t * p2x + t * t * t * p3x,
-      y: q * q * q * p0y + 3 * q * q * t * p1y + 3 * q * t * t * p2y + t * t * t * p3y,
+      x: region.x + region.w - 34,
+      y: region.y,
+      rowY: region.y,
+      rowX: region.x + region.w - 34,
       busy: Boolean(running),
       key: region.event.id,
       route: region.event.route,
@@ -128,13 +142,8 @@ export class LiveRenderer {
     this.spiderMoving = far > 1.4;
     return far > 1.4 ? { x: nx, y: ny, vx, vy } : { x: nx, y: ny, vx: 0, vy: 0 };
   }
-  web(view,time,reducedMotion,selectedId){
+  web(view,time,reducedMotion,selectedId,body,focus){
     const c=this.ctx,{config}=view,t=config.theme,s=this.layout.scene;
-    const focus=this.focusPoint();
-    // 焦点换了（Agent 推进到新的一步）→ 记下时间，spider() 里做一次脉冲
-    if(focus && this.lastFocusKey!==undefined && focus.key!==this.lastFocusKey)this.reactAt=time;
-    this.lastFocusKey=focus?.key;
-    const body=this.stepSpider(focus,time,reducedMotion);
     // 底色：一次线性渐变铺出网的纵深感（只建一次，不每帧造对象）
     const wash=c.createLinearGradient(s.x+s.w*.3,0,s.x+s.w,0);
     wash.addColorStop(0,alpha(t.spider,0));wash.addColorStop(.55,alpha(t.spider,.028));wash.addColorStop(1,alpha(t.spider,0));
@@ -170,7 +179,8 @@ export class LiveRenderer {
         c.fillStyle=alpha('#ffffff',.55);c.fillRect(x-1,y-1,2,2);
         if(p<1)this.text(this.label(event.label,120),x+9,y+4,color,10);}
     }
-    this.spider(body,time,reducedMotion,t);
+    // 蜘蛛本体不在这里画 —— render() 在文字画完之后才画它，
+    // 这样它才像原项目那样「趴在字上面」，而不是被文字盖住。
     for(const route of ROUTES){const p=routeTarget(this.layout,route),color=config.routes[route].color,w=s.w*.19,h=100;
       // 分支卡：顶部渐变条 + 内描边 + 计数辉光
       c.fillStyle=t.panel;c.fillRect(p.x-w/2,p.y-h/2,w,h);
@@ -183,15 +193,35 @@ export class LiveRenderer {
       else this.text(n,p.x+w/2-12,p.y+18,alpha(color,.5),29,'right',true);
       this.text(config.routes[route].label,p.x-w/2+12,p.y-20,color,12);this.text(route.toUpperCase(),p.x-w/2+12,p.y+37,t.muted,9);}
   }
-  spider(body,time,reducedMotion,theme){
+  spider(body,time,reducedMotion,theme,focus){
     // 绘制逻辑已抽到 spider.js 的 drawSpiderBody，实时面板与美术查看器共用同一份，
     // 避免两处画风分叉。
-    //
+    const c = this.ctx;
+
+    // ── 丝囊：身后拖一条丝 ──────────────────────────────────
+    // 原项目里蜘蛛爬过的地方会留下被吃掉的痕迹；这里留下它走过的路径。
+    // 不是装饰 —— 它显示这个会话里蜘蛛从哪爬到哪，即 Agent 的推进方向。
+    if (this.trail && this.trail.length > 1) {
+      c.beginPath();
+      c.moveTo(this.trail[0].x, this.trail[0].y);
+      for (let i = 1; i < this.trail.length; i++) {
+        const prev = this.trail[i - 1], cur = this.trail[i];
+        // 用二次贝塞尔让丝有轻微垂坠，像真的丝而不是折线
+        const mx = (prev.x + cur.x) / 2 + 7, my = (prev.y + cur.y) / 2;
+        c.quadraticCurveTo(mx, my, cur.x, cur.y);
+      }
+      c.strokeStyle = alpha(theme.spider, .16);
+      c.lineWidth = 1;
+      c.stroke();
+    }
+
     // 每来一个**新的**步骤，给一次下压脉冲 —— 这是「蜘蛛对 Agent 的动作有反应」
     // 最直接的那一下。没有它，蜘蛛只是位移，看不出「它注意到了」。
     const age = time - (this.reactAt ?? -99);
     const react = (reducedMotion || age < 0 || age > .5) ? 0 : (1 - age / .5) ** 2;
-    drawSpiderBody(this.ctx,body,time,reducedMotion,theme,{scale:1 + react * .22});
+    // 放大到 1.45 倍：原项目里蜘蛛在画布上占很大一块，是有存在感的主体；
+    // 这里如果只用 1.0，它缩在一行里像个图标，没有「趴在内容上」的感觉。
+    drawSpiderBody(c, body, time, reducedMotion, theme, { scale: 1.45 * (1 + react * .22) });
   }
   stream(view,rect,t){this.panel(rect,'RECENT / EVENT DETAILS',t,'CLICK TASK TO INSPECT');const rows=view.events.slice(-Math.floor((rect.h-45)/29));for(let i=0;i<rows.length;i++){const e=rows[i],y=rect.y+55+i*29,color=view.config.routes[e.route].color;this.text(this.label(e.label,rect.w*.52),rect.x+13,y,t.text,11);this.text(STATUS[e.status],rect.x+rect.w*.60,y,color,10);this.text(e.score===null||e.score===undefined?'分数未提供':Number(e.score).toFixed(3),rect.x+rect.w-13,y,t.muted,10,'right');}}
   stats(view,rect,t){

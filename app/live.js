@@ -38,7 +38,7 @@ export async function startLive(project={}) {
   $('#aboutDialog').insertAdjacentHTML('beforeend','<p>实时模式接收 Agent 通过 MCP 上报的步骤或逐词事件。相同事件 ID 会更新状态，UI 不把重复更新当成新任务，也不会生成未提供的分数、预计总量或模型调用数。</p><p>暂停和拖动时间轴只冻结观看位置，事件仍在后台接收。点击“返回实时”回到最新状态。回放 JSON 保留上报历史、相对时间和外观变更，可以离线导入。</p><p class="muted">快捷键：空格播放 / 暂停，R 重播，F 沉浸模式，Esc 退出；左右方向键前后跳转。</p>');
   const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)').matches,canvas=$('#scene');
   const renderer=new LiveRenderer(canvas,{onSelect:selectEvent});
-  let sessionId=new URLSearchParams(location.search).get('session'),remote=Boolean(sessionId),token='',meta=null,record=null,projection=null,anchor=performance.now(),selectedId=null,drawerOpen=false,connection='正在连接',streamAbort=null,toastTimer,lastUi=0,lastConfig=null,lastView=null,localStore=null,localId=null,reconnectTimer=null,closed=false,visiblePage=0,wordConfig=null,wordTokens=[];
+  let sessionId=new URLSearchParams(location.search).get('session'),remote=Boolean(sessionId),token='',meta=null,record=null,projection=null,anchor=performance.now(),selectedId=null,drawerOpen=false,connection='正在连接',streamAbort=null,toastTimer,lastUi=0,lastConfig=null,lastView=null,localStore=null,localId=null,reconnectTimer=null,closed=false,visiblePage=0,wordConfig=null,wordTokens=[],autoPage=true;
   const capabilities=new URLSearchParams(location.hash.slice(1));
   if(capabilities.has('token')){token=capabilities.get('token');sessionStorage.setItem('prompt-spider-token',token);history.replaceState(null,'',location.pathname+location.search);}
   else token=sessionStorage.getItem('prompt-spider-token')||'';
@@ -101,7 +101,17 @@ export async function startLive(project={}) {
   }
   function render(force=false){
     if(!projection||!meta)return;const at=cursor(),filter=meta.playback.routeFilter||'all';let page=meta.playback.page||0;
-    let view=projection.view(at,{offset:page*PAGE_SIZE,limit:PAGE_SIZE});const maxPage=Math.max(0,Math.ceil(view.totalEvents/PAGE_SIZE)-1);if(page>maxPage){page=maxPage;view=projection.view(at,{offset:page*PAGE_SIZE,limit:PAGE_SIZE});}visiblePage=page;lastView=view;syncConfig(view.config);
+    let view=projection.view(at,{offset:page*PAGE_SIZE,limit:PAGE_SIZE});
+    const maxPage=Math.max(0,Math.ceil(view.totalEvents/PAGE_SIZE)-1);
+    // live 模式默认**跟最后一页**。不跟的话你在「直播」里看到的永远是
+    // 最早的 32 条事件 —— 蜘蛛也就永远停在开头，看起来像没在跟。
+    // 用户手动翻页（autoPage=false）时不抢，点了「返回实时」再恢复。
+      // 判定用 status+source（和「返回实时」按钮同一个口径），不依赖 playback.mode 的字面值。
+      const isLiveStream=meta.status==='live'&&meta.source!=='replay'&&!closed;
+      if(isLiveStream&&autoPage&&page!==maxPage)page=maxPage;
+    if(page>maxPage)page=maxPage;
+    view=projection.view(at,{offset:page*PAGE_SIZE,limit:PAGE_SIZE});
+    visiblePage=page;lastView=view;syncConfig(view.config);
     if(view.config.unit==='word'){if(wordConfig!==view.config){wordConfig=view.config;wordTokens=tokenizePrompt(view.config.prompt).tokens;}view={...view,events:view.events.map(event=>({...event,displayLabel:wordTokens[event.tokenIndex]?.word??event.label}))};}
     renderer.render(view,{time:at,reducedMotion,selectedId,page,routeFilter:filter,connection});
     const now=performance.now();if(!force&&now-lastUi<100)return;lastUi=now;
@@ -116,10 +126,10 @@ export async function startLive(project={}) {
     const valid=validateRecord(input);clearTimeout(reconnectTimer);remote=false;streamAbort?.abort();localStore=new SessionStore();const snapshot=localStore.importRecord(valid);localId=snapshot.id;sessionId=null;connection='离线回放';selectedId=null;receiveSnapshot(snapshot);$('#liveDescription').textContent='离线回放 · 导入的记录仅保存在当前页面内存。';
   }
   function download(payload){const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='prompt-spider-session.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-  $('#playBtn').addEventListener('click',()=>control({action:meta?.playback.mode==='paused'?'play':'pause'}));$('#restartBtn').addEventListener('click',()=>control({action:'restart'}));$('#followLiveBtn').addEventListener('click',()=>control({action:'follow_live'}));
+  $('#playBtn').addEventListener('click',()=>control({action:meta?.playback.mode==='paused'?'play':'pause'}));$('#restartBtn').addEventListener('click',()=>control({action:'restart'}));$('#followLiveBtn').addEventListener('click',()=>{autoPage=true;control({action:'follow_live'});});
   $('#timeline').addEventListener('input',event=>control({action:'seek',position:Number(event.target.value)}));$('#speed').addEventListener('change',event=>control({speed:Number(event.target.value)}));$('#loop').addEventListener('change',event=>control({loop:event.target.checked}));
   document.querySelectorAll('[data-live-route]').forEach(button=>button.addEventListener('click',()=>control({routeFilter:button.dataset.liveRoute})));
-  $('#previousPage').addEventListener('click',()=>control({page:Math.max(0,visiblePage-1)}));$('#nextPage').addEventListener('click',()=>control({page:visiblePage+1}));
+  $('#previousPage').addEventListener('click',()=>{autoPage=false;control({page:Math.max(0,visiblePage-1)});});$('#nextPage').addEventListener('click',()=>{autoPage=false;control({page:visiblePage+1});});
   $('#liveConfig').addEventListener('submit',async event=>{
     event.preventDefault();const routes=Object.fromEntries(ROUTES.map(route=>[route,{label:$(`#label-${route}`).value,color:$(`#color-${route}`).value}])),patch={layout:$('#layoutInput').value,title:$('#titleInput').value,modelName:$('#modelInput').value,routes,theme:{accent:$('#accentInput').value,spider:$('#spiderInput').value,background:$('#backgroundInput').value}};
     if(!$('#livePrompt').disabled)patch.prompt=$('#livePrompt').value;
