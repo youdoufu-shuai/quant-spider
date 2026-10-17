@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { createReadStream } from 'node:fs';
-import { realpath, stat } from 'node:fs/promises';
+import { readFile, realpath, stat } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -26,6 +26,50 @@ export async function serveStatic(req, res, { root = projectRoot } = {}) {
   } catch { res.writeHead(400).end('Invalid path'); return; }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD' }).end(); return; }
   if (pathname === '/status') { json(res, { application: 'prompt-spider-ui' }); return; }
+
+  // ── /api/live-status ──────────────────────────────────────────
+  // 实时会话的**真实**状态。
+  //
+  // 为什么需要：lib/live-sessions.json 里的 updatedAt 只是「最后一次
+  // 写入时间」。live-feed 进程被 kill 后条目会一直留着，时间戳看起来
+  // 还很新 —— 页面显示「活跃」，但链接指向已经死掉的会话。
+  // 实测踩过：发现文件里有 pid 4676 的死条目，端口 53507 早已关闭。
+  //
+  // 这里用 process.kill(pid, 0) 检查进程**是否真的还活着**
+  // （信号 0 不发信号，只做存在性检查），给页面一个可信状态。
+  if (pathname === '/api/live-status') {
+    let raw = { sessions: [] };
+    try {
+      raw = JSON.parse(await readFile(path.join(root, 'lib', 'live-sessions.json'), 'utf8'));
+    } catch (error) {
+      if (error.code !== 'ENOENT') { res.writeHead(500).end('Read error'); return; }
+    }
+    const now = Date.now();
+    const sessions = (Array.isArray(raw.sessions) ? raw.sessions : []).map((s) => {
+      let alive = false;
+      let probe = 'no-pid';
+      if (Number.isInteger(s.pid) && s.pid > 0) {
+        try {
+          process.kill(s.pid, 0);        // 信号 0：只探测，不发信号
+          alive = true;
+          probe = 'alive';
+        } catch (error) {
+          // ESRCH = 进程不存在；EPERM = 存在但无权限（本机同用户不会发生）
+          probe = error.code === 'EPERM' ? 'no-permission' : 'gone';
+        }
+      }
+      return {
+        ...s,
+        alive,
+        probe,
+        ageMs: Number.isFinite(s.updatedAt) ? now - s.updatedAt : null,
+      };
+    });
+    res.setHeader('Cache-Control', 'no-store');
+    json(res, { now, updatedAt: raw.updatedAt ?? null, sessions });
+    return;
+  }
+
   let filename;
   let base;
   if (pathname === '/project-config.json' || pathname === '/replay.json') {

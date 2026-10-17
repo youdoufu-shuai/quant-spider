@@ -32,6 +32,10 @@
     border:1px solid var(--border);font-size:10px;color:var(--muted)}
   .dot{width:6px;height:6px;border-radius:50%;background:var(--ok)}
   .dot.stale{background:var(--warn)}
+  .card.dead{opacity:.62}
+  .card.dead .go{background:#2a2c31;color:var(--muted);cursor:not-allowed}
+  .dead-tag{font-size:10px;color:var(--warn);border:1px solid var(--warn);
+    border-radius:8px;padding:1px 7px;vertical-align:2px;font-weight:400}
   .empty{color:var(--muted);padding:30px 0;font-size:12px}
   .actions{margin-top:18px;display:flex;gap:10px;flex-wrap:wrap}
   button{background:#191a1e;color:var(--text);border:1px solid var(--border);
@@ -80,10 +84,20 @@ const ago = ms => {
 
 async function load(autoOpen = false) {
   try {
-    // 发现文件：主服务器对 /lib/ 有白名单静态路由
-    const r = await fetch('/lib/live-sessions.json?_=' + Date.now());
-    if (!r.ok) throw new Error(`发现文件 HTTP ${r.status}`);
-    const d = await r.json();
+    // 优先用 /api/live-status —— 它会用 process.kill(pid,0) 检查进程存活。
+    // 静态的 /lib/live-sessions.json 只知道「最后写入时间」：喂养器被 kill
+    // 后条目还在、时间戳还新，页面会骗你说「活跃」。拿不到端点时回退到静态文件
+    // （比如用别的静态服务器托管这个目录时）。
+    let d;
+    try {
+      const r = await fetch('/api/live-status?_=' + Date.now());
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      d = await r.json();
+    } catch {
+      const r = await fetch('/lib/live-sessions.json?_=' + Date.now());
+      if (!r.ok) throw new Error(`发现文件 HTTP ${r.status}`);
+      d = await r.json();
+    }
     const list = (d.sessions || []).filter(s => s.previewUrl);
 
     $('count').textContent = `当前 ${list.length} 个活跃会话`;
@@ -99,13 +113,19 @@ async function load(autoOpen = false) {
       return;
     }
 
+    // ⚠️ 状态判定看「进程是否活着」，不是看时间戳。
+    //    alive  → 绿点，说明喂养器真的在跟
+    //    dead   → 黄点 + 标灰，进程已退出，链接指向死会话，别让人误点
     $('list').innerHTML = list.map((s, i) => {
-      const fresh = Date.now() - (s.updatedAt || 0) < 30000;
-      return `<div class="card ${i === 0 ? 'active' : ''}">
-        <h3>${escapeHtml(s.title || '(无标题)')}</h3>
+      const alive = s.alive === true;
+      const dead = s.alive === false;
+      const stateText = alive
+        ? '跟随着' + (s.current ? ' · ' + escapeHtml(s.current) : '')
+        : (dead ? '已停止（喂养器进程已退出）' : '状态未知 · 最近 ' + ago(s.updatedAt));
+      return `<div class="card ${alive ? 'active' : ''}${dead ? ' dead' : ''}">
+        <h3>${escapeHtml(s.title || '(无标题)')}${dead ? ' <span class="dead-tag">已停止</span>' : ''}</h3>
         <div class="row">
-          <span class="pill"><span class="dot ${fresh ? '' : 'stale'}"></span>
-            ${fresh ? '活跃' : '最近 ' + ago(s.updatedAt)}</span>
+          <span class="pill"><span class="dot ${alive ? '' : 'stale'}"></span>${stateText}</span>
           <span class="kv">轮次 <b>${s.turns ?? '—'}</b></span>
           <span class="kv">步骤 <b>${s.steps ?? '—'}</b></span>
           <span class="kv">当前 <b>${escapeHtml(s.current || '—')}</b></span>

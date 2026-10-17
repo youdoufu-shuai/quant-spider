@@ -65,6 +65,19 @@ export function publishSession(info) {
   let sessions = all.sessions.filter(s => now - (s.updatedAt || 0) < STALE_MS);
   // 同一个 pid 的旧记录去掉（重启后 pid 会变，但同一进程重复发布要幂等）
   sessions = sessions.filter(s => s.pid !== process.pid);
+  // 再按 **进程是否还活着** 清一遍。
+  // ⚠️ 只按时间戳清是不够的：喂养器被 kill 后 10 分钟内，条目还在、
+  //    updatedAt 还很新 —— /live 会把它显示成「活跃」，点进去是死会话。
+  //    实测踩过（留下 pid 4676 / 端口早已关闭的条目）。
+  sessions = sessions.filter((s) => {
+    if (!Number.isInteger(s.pid) || s.pid <= 0) return true;   // 没 pid 信息，交给时间戳判断
+    try {
+      process.kill(s.pid, 0);      // 信号 0：只探测进程是否存在
+      return true;
+    } catch (error) {
+      return error.code === 'EPERM';   // 存在但无权限 → 保留；ESRCH → 删掉
+    }
+  });
 
   sessions.unshift({
     ...info,
