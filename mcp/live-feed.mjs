@@ -93,12 +93,39 @@ function classifyTool(name) {
   return 'code';
 }
 
+// ── 摘要压缩 ──────────────────────────────────────────────────
+// 为什么需要：面板上 195 条事件如果都显示
+//   `执行命令 · $dst = "C:\Users\...\default-workspace\prompt-spider-ui"`
+// 那就是 195 行一模一样的东西 —— 有区分度的部分全被截掉了。
+//
+// 做法：把「本机路径前缀」折叠成 ~，跳过命令开头的变量赋值，
+// 让不携带信息的字节让位给携带信息的字节。不是丢信息。
+const HOME_DIR = homedir();
+const WORKSPACE_DIRS = [
+  path.join(HOME_DIR, 'Documents', 'deepseek-harness', 'default-workspace'),
+  path.join(HOME_DIR, 'Documents'),
+  HOME_DIR,
+].filter(Boolean);
+
+function compact(text) {
+  let t = String(text ?? '').replace(/\s+/g, ' ').trim();
+  // 用反斜杠和正斜杠两种写法都折一遍
+  for (const dir of WORKSPACE_DIRS) {
+    for (const form of [dir, dir.replace(/\\/g, '/')]) {
+      t = t.split(form).join('~');
+    }
+  }
+  // 还太长就再折一层：~/a/b/c → ~/…/c
+  t = t.replace(/~[\\/][\w.\-]+[\\/][\w.\-]+[\\/]([\w.\-]+)/g, '~/…/$1');
+  return t;
+}
+
 function summarizeArgs(name, rawArgs) {
   if (!rawArgs) return '';
   let a;
-  try { a = JSON.parse(rawArgs); } catch { return String(rawArgs).replace(/\s+/g, ' ').slice(0, 70); }
+  try { a = JSON.parse(rawArgs); } catch { return compact(rawArgs).slice(0, 70); }
   const clip = (s, n = 70) => {
-    const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+    const t = compact(s);
     return t.length > n ? t.slice(0, n) + '…' : t;
   };
   switch (name) {
@@ -106,8 +133,14 @@ function summarizeArgs(name, rawArgs) {
       return clip(a.file_path || a.path || '');
     case 'grep': case 'glob':
       return clip(a.pattern || '');
-    case 'pwsh':
-      return clip(a.command || '', 96);
+    case 'pwsh': {
+      // 命令常以 `$var = "长路径"` 开头，跳过这段前置赋值，
+      // 从真正干活的地方开始显示 —— 否则每条都长一个样。
+      let cmd = String(a.command || '').replace(/\s+/g, ' ').trim();
+      const lead = cmd.match(/^((?:\$\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s;]+)\s*;?\s*)+)/);
+      if (lead && cmd.length - lead[1].length > 24) cmd = cmd.slice(lead[1].length);
+      return clip(cmd, 96);
+    }
     case 'web_search':
       return clip((a.queries || []).join(' / '));
     case 'web_fetch':
