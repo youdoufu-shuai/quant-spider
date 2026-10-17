@@ -67,6 +67,7 @@ TEST_FILES = [
     "test_perf.py",
     "test_screener.py",
     "test_ai_portfolio.py",
+    "test_stock_ai.py",
     "test_symbols_cache.py",
 ]
 
@@ -92,6 +93,7 @@ MIN_CASES_PER_FILE = {
     "test_perf.py": 2,
     "test_screener.py": 30,
     "test_ai_portfolio.py": 15,
+    "test_stock_ai.py": 8,
     "test_symbols_cache.py": 5,
 }
 

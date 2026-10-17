@@ -114,6 +114,7 @@ const cache = new Map();   // key -> { at, data }
 // 为什么：选股要拉全市场快照（约 83 页 / 5500 只），实测 7.4 秒。
 // 行情缓存 20 秒的 TTL 对选股太短 —— 连点两次「筛选」不该等两次。
 const screenCache = new Map();   // key -> { at, data }
+let heatCache = { at: 0, ck: '', data: null };   // 云图缓存
 
 async function getQuant(params) {
   const market = params.get('market') || 'ashare';
@@ -567,6 +568,43 @@ const server = http.createServer(async (req, res) => {
     //
     // ⚠️ 选股要拉全市场快照，实测 7.4 秒。所以超时给到 180 秒，
     //    并且结果缓存 60 秒（见 screenCache 的说明）。
+    // ── /api/heatmap ────────────────────────────────────────────
+    // 市场云图：全市场快照按申万一级行业分组，给 treemap 用。
+    //
+    // 全市场拉取约 3-5 秒（5576 只 / 4 个板块节点），所以缓存 60 秒。
+    // 和选股的区别：选股会先剔掉 ST/停牌/低流动性，云图**不能剔** ——
+    // 少了它们，板块的市值权重和涨跌就是错的。
+    if (pathname === '/api/heatmap' && req.method === 'GET') {
+      const q = new URL(req.url, 'http://127.0.0.1').searchParams;
+      // 参数白名单 + 范围夹紧，避免把任意数字拼进命令行
+      const top = Math.max(0, Math.min(200, Number(q.get('top')) || 0));
+      const minCap = Math.max(0, Math.min(5000, Number(q.get('minCap')) || 0));
+      const force = q.get('refresh') === '1';
+      const ck = `${top}:${minCap}`;
+      if (!force && heatCache.data && heatCache.ck === ck
+          && Date.now() - heatCache.at < 60000) {
+        res.writeHead(200, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ ...heatCache.data, cached: true }));
+        return;
+      }
+      try {
+        const args = ['--json'];
+        if (top) args.push('--top', String(top));
+        if (minCap) args.push('--min-cap', String(minCap));
+        const out = await runPython(path.join(here, 'heatmap.py'), args, 120000);
+        const data = typeof out === 'string' ? JSON.parse(out) : out;
+        if (data && !data.error) {
+          heatCache = { at: Date.now(), ck, data };
+        }
+        res.writeHead(200, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(data));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': TYPES['.json'] });
+        res.end(JSON.stringify({ error: String(e.message || e) }));
+      }
+      return;
+    }
+
     if (pathname === '/api/screen/strategies' && req.method === 'GET') {
       try {
         const out = await runPython(path.join(here, 'screener.py'),

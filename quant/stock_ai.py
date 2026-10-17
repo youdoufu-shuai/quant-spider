@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -299,9 +300,60 @@ SYSTEM_PROMPT = """你是一个 A 股选股助手。用户会给你一批**已�
 """
 
 
-def _build_user_prompt(cands: list[dict], n_pick: int, extra: str = "") -> str:
+def market_context(max_sectors: int = 6) -> str:
+    """
+    给 AI 的**市场背景**：涨跌家数 + 板块涨跌前后列。
+
+    为什么要给这个：
+      只看 30 只候选的个股指标，AI 不知道「今天整体是涨是跌、钱在往哪流」。
+      同样的 PE 5 倍，在全市场跌 2% 的日子里和涨 2% 的日子里含义完全不同；
+      同一个技术形态，在资金流入的板块里和流出板块里的成功率也不同。
+
+    为什么放在 ai_rank 内部才算（而不是一开始就算）：
+      全市场快照要 3-5 秒。没有 API Key 走本地打分时不需要它，
+      所以只在真的要请求模型时才拉。
+
+    失败一律返回空串 —— 市场背景是**加分项**，拿不到不能挡住选股。
+    """
+    if os.environ.get("QUANT_OFFLINE") == "1":
+        return ""
+    try:
+        from heatmap import build as _build_heatmap
+        from screener import fetch_market as _fetch_market
+        data = _build_heatmap(_fetch_market())
+    except Exception:                                          # noqa: BLE001
+        return ""
+
+    total = data.get("total") or 0
+    if not total:
+        return ""
+    b = data.get("breadth") or {}
+    up, down = b.get("advance", 0), b.get("decline", 0)
+    ratio = up / max(1, down)
+
+    sectors = [s for s in (data.get("sectors") or []) if s.get("chg") is not None]
+    sectors.sort(key=lambda s: s["chg"], reverse=True)
+
+    lines = [f"今日全市场 {total} 只：上涨 {up} / 下跌 {down}"
+             f"（涨跌比 {ratio:.2f}，{'普涨' if ratio > 1.6 else '普跌' if ratio < 0.6 else '分化'}）"]
+    if sectors:
+        top = sectors[:max_sectors]
+        bot = list(reversed(sectors[-max_sectors:]))
+        lines.append("板块涨幅前列：" +
+                     "、".join(f"{s['name']} {s['chg']:+.2f}%" for s in top))
+        lines.append("板块跌幅前列：" +
+                     "、".join(f"{s['name']} {s['chg']:+.2f}%" for s in bot))
+    lines.append("（板块涨跌为流通市值加权，是全市场快照现算的近似，不是官方板块指数）")
+    return "\n".join(lines)
+
+
+def _build_user_prompt(cands: list[dict], n_pick: int,
+                      extra: str = "", context: str = "") -> str:
     """把候选整理成给 AI 的文本。只给有用的字段，不塞原始数组。"""
-    lines = [f"以下是 {len(cands)} 只候选股票，请从中选出最多 {n_pick} 只。", ""]
+    lines: list[str] = []
+    if context:
+        lines += ["═══ 今日市场背景 ═══", context, ""]
+    lines += [f"以下是 {len(cands)} 只候选股票，请从中选出最多 {n_pick} 只。", ""]
     for c in cands:
         t = c.get("tech") or {}
         lines.append(
@@ -368,6 +420,72 @@ def _extract_json(text: str) -> dict | None:
         return json.loads(t[lo:hi + 1])
     except json.JSONDecodeError:
         return None
+
+
+def enforce_sector_quota(picks: list[dict], cands: list[dict],
+                         n_pick: int, max_per_sector: int = 2) -> tuple[list[dict], list[str]]:
+    """
+    硬性执行「同行业最多 2 只」，不足则从剩余候选里补。
+
+    为什么必须硬校验：SYSTEM_PROMPT 里已经要求 AI「某行业最多选 2 只」，
+    但那只是**提示**，模型可能不遵守（尤其候选里某行业扎堆时）。
+    实测这类约束靠 prompt 只有 70~80% 命中率，必须在校验层落成代码。
+
+    补齐规则：按 L2 横截面分从高到低取，仍然受配额限制。
+    这样最终名单**永远满足配额**，而不是「尽量」。
+    """
+    problems: list[str] = []
+    by_sym = {c["symbol"]: c for c in cands}
+
+    def sector_of(sym: str) -> str:
+        c = by_sym.get(sym) or {}
+        return c.get("sector") or "其它"
+
+    kept: list[dict] = []
+    per: dict[str, int] = {}
+    for pk in picks:
+        sec = sector_of(pk.get("symbol", ""))
+        # 「其它」不参与配额：它不是一个真实行业，把互不相关的票压在一个桶里
+        # 既错误限制它们，又让分散度统计失真
+        if sec == "其它":
+            kept.append(pk)
+            continue
+        if per.get(sec, 0) >= max_per_sector:
+            problems.append(
+                f"行业配额：{pk.get('symbol')}（{sec}）已达 {max_per_sector} 只上限，移出名单")
+            continue
+        per[sec] = per.get(sec, 0) + 1
+        kept.append(pk)
+
+    # 不足则补：按 l2Score 降序，跳过已在名单里的和超配额的
+    if len(kept) < n_pick:
+        chosen = {pk.get("symbol") for pk in kept}
+        pool = sorted(
+            (c for c in cands if c["symbol"] not in chosen),
+            key=lambda c: (c.get("l2Score") or 0), reverse=True)
+        for c in pool:
+            if len(kept) >= n_pick:
+                break
+            sec = c.get("sector") or "其它"
+            if sec != "其它" and per.get(sec, 0) >= max_per_sector:
+                continue
+            kept.append({
+                "symbol": c["symbol"],
+                "rank": len(kept) + 1,
+                "thesis": "AI 未选满，按 L2 横截面分补齐（非 AI 判断）",
+                "risks": [],
+                "watch": "",
+                "invalidators": "",
+                "confidence": None,
+                "filled": True,
+            })
+            if sec != "其它":
+                per[sec] = per.get(sec, 0) + 1
+            problems.append(f"补位：{c['symbol']}（AI 只选出 {len(kept) - 1} 只，按 L2 补足）")
+
+    for i, pk in enumerate(kept, 1):
+        pk["rank"] = i
+    return kept, problems
 
 
 def validate_picks(parsed: dict, cands: list[dict]) -> tuple[dict, list[str]]:
@@ -445,7 +563,7 @@ def validate_picks(parsed: dict, cands: list[dict]) -> tuple[dict, list[str]]:
 
 
 def ai_rank(enriched: list[dict], n_pick: int = 8,
-            extra_context: str = "") -> dict:
+            extra_context: str = "", max_per_sector: int = 2) -> dict:
     """
     让 AI 排序。没有可用配置时**回退到本地打分**（并标明）。
 
@@ -468,6 +586,9 @@ def ai_rank(enriched: list[dict], n_pick: int = 8,
         out["note"] = "AI 决策未启用（AI 设置里的开关），已回退本地打分。"
         return out
 
+    # 市场背景：只在真的要请求模型时才算（拉全市场要 3-5 秒）
+    context = market_context()
+
     # 直接用 provider 的 chat 接口。不通过 AutoDecider —— 那个是单股决策用的。
     import urllib.request
 
@@ -476,7 +597,7 @@ def ai_rank(enriched: list[dict], n_pick: int = 8,
         "model": cfg.model,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": _build_user_prompt(enriched, n_pick, extra_context)},
+            {"role": "user", "content": _build_user_prompt(enriched, n_pick, extra_context, context)},
         ],
         "temperature": min(cfg.temperature, 0.6),   # 选股要稳定，压低温度
         "stream": False,
@@ -512,13 +633,19 @@ def ai_rank(enriched: list[dict], n_pick: int = 8,
         return out
 
     clean, problems = validate_picks(parsed, enriched)
+    # 行业配额是硬约束，prompt 里要求了但模型可能不遵守
+    quota_picks, quota_problems = enforce_sector_quota(
+        clean["picks"], enriched, n_pick, max_per_sector)
+    problems = list(problems) + quota_problems
     return {
         "mode": "ai",
+        "hadMarketContext": bool(context),
+        "maxPerSector": max_per_sector,
         "provider": cfg.provider,
         "model": cfg.model,
         "elapsedMs": elapsed,
         "marketView": clean["market_view"],
-        "picks": clean["picks"],
+        "picks": quota_picks,
         "portfolioRisks": clean["portfolio_risks"],
         "avoided": clean["avoided"],
         "problems": problems,

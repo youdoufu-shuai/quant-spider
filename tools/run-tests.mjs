@@ -27,6 +27,7 @@
  *    optimizer.py --selftest     51 断言   离线
  *    ai_settings.py --selftest   43 断言   离线
  *    decision.py --selftest      56 断言   离线
+ *    heatmap.py --selftest      10 断言   离线
  *    datasource.py --selftest     7 断言   ⚠ 联网（真实抓新浪行情）
  *    symbols.py --selftest       25 断言   ⚠ 联网（首次要枚举 8265 只 A 股 + 511 个币对，约 98s）
  *
@@ -78,7 +79,7 @@ const PY_TIMEOUT_MS = 120000;                  // 离线套件实测 < 1s，留�
 const NET_TIMEOUT_MS = 300000;
 const NODE_TIMEOUT_MS = 300000;
 
-const USAGE = `quant-spider 统一测试入口
+const USAGE = `quant-workbench 统一测试入口
 
   node tools/run-tests.mjs                 全部套件（联网套件失败不判定为失败）
   node tools/run-tests.mjs --offline       跳过联网套件
@@ -108,6 +109,7 @@ const PY_SUITES = [
   { id: 'optimizer',       label: 'optimizer.py --selftest',    script: 'quant/optimizer.py',       args: ['--selftest'], network: false },
   { id: 'ai_settings',     label: 'ai_settings.py --selftest',  script: 'quant/ai_settings.py',     args: ['--selftest'], network: false },
   { id: 'decision',        label: 'decision.py --selftest',     script: 'quant/decision.py',        args: ['--selftest'], network: false },
+  { id: 'heatmap',         label: 'heatmap.py --selftest',      script: 'quant/heatmap.py',         args: ['--selftest'], network: false },
   { id: 'datasource',      label: 'datasource.py --selftest',   script: 'quant/datasource.py',      args: ['--selftest'], network: true  },
   { id: 'symbols',         label: 'symbols.py --selftest',      script: 'quant/symbols.py',         args: ['--selftest'], network: true  },
 ];
@@ -184,7 +186,7 @@ function main(argv) {
   const startedAt = Date.now();
 
   console.log(RULE);
-  console.log('  quant-spider 统一测试入口');
+  console.log('  quant-workbench 统一测试入口');
   console.log(`  仓库   ${ROOT}`);
   console.log(`  Node   ${process.version}  (${NODE})`);
   if (py) console.log(`  Python ${py.version}  (${[py.cmd, ...py.pre].join(' ')})`);
@@ -220,10 +222,7 @@ function main(argv) {
   // ── Node 测试 ─────────────────────────────────────────────────────────────
   if (wantNode) {
     const files = nodeTestFiles();
-    console.log('[ Node 测试 ]');
-    if (files.length === 0) {
-      console.log('  ⚠ tests/*.test.mjs 一个都没有，跳过');
-    } else {
+      if (files.length > 0) {
       const rel = files.map((f) => path.relative(ROOT, f));
       const label = `tests/*.test.mjs（${rel.length} 个文件）`;
       console.log(`  → ${label}`);

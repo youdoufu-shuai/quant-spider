@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>市场云图 · 量化工作台</title>
+  <link rel="stylesheet" href="/theme.css" />
+  <style>
+    /* 本页专属：云图铺满宽度，告示条和读数条贴着它 */
+    #cvMap { height: 620px; }
+    @media (max-width: 900px) { #cvMap { height: 460px; } }
+
+    /* 悬浮提示：唯一允许有阴影的地方（它真的浮在内容上） */
+    #tip {
+      position: fixed;
+      pointer-events: none;
+      background: var(--paper);
+      border: 1px solid var(--rule-strong);
+      box-shadow: 0 6px 20px rgba(16, 24, 40, .10);
+      padding: 8px 11px;
+      font-size: var(--fs-small);
+      line-height: 1.6;
+      display: none;
+      z-index: 20;
+      min-width: 150px;
+      max-width: 260px;
+    }
+    #tip .nm { font-weight: 600; }
+    #tip .cd { color: var(--muted); font-size: var(--fs-label); }
+    #tip .rw { display: flex; justify-content: space-between; gap: 14px; }
+    #tip .rw .k { color: var(--muted); font-size: var(--fs-label); }
+    #tip .rw .v { font-variant-numeric: tabular-nums; }
+
+    /* 色阶图例 */
+    .scale { display: flex; align-items: center; gap: 8px;
+             font-size: var(--fs-label); color: var(--muted); }
+    .scale .ramp { display: flex; height: 8px; width: 180px; }
+    .scale .ramp i { flex: 1; }
+
+    /* 读数条 */
+    .breadth { display: flex; gap: 28px; flex-wrap: wrap; align-items: baseline; }
+    .breadth .it .k { display: block; font-size: var(--fs-label); color: var(--muted); }
+    .breadth .it .v { font-size: var(--fs-big); font-weight: 600;
+                      font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+    .legendrow { display: flex; justify-content: space-between; align-items: center;
+                 gap: 20px; flex-wrap: wrap; margin-top: 10px; }
+    .empty-hint { color: var(--muted); font-size: var(--fs-small); padding: 20px 0; }
+  </style>
+</head>
+<body>
+
+  <header class="masthead">
+    <h1 class="brand">量化工作台</h1>
+    <span class="where">市场云图</span>
+    <div class="meta">
+      <span><span class="dot" id="dot"></span><span id="status">加载中…</span></span>
+      <span id="asOf"></span>
+    </div>
+  </header>
+
+  <nav class="navbar">
+    <a href="/">看板</a>
+    <a href="/heatmap.html" class="here">云图</a>
+    <a href="/screen.html">选股</a>
+    <a href="/decision.html">决策驾驶舱</a>
+    <a href="/pro.html">专业图表</a>
+    <a href="/paper.html">模拟盘</a>
+  </nav>
+
+  <div id="err"></div>
+
+  <div class="wrap">
+
+    <div class="row">
+      <label class="f">每行业显示
+        <select id="top">
+          <option value="5">前 5 只</option>
+          <option value="8" selected>前 8 只</option>
+          <option value="15">前 15 只</option>
+          <option value="40">前 40 只</option>
+          <option value="0">全部</option>
+        </select>
+      </label>
+      <label class="f">最小市值
+        <select id="minCap">
+          <option value="0" selected>不限</option>
+          <option value="30">≥ 30 亿</option>
+          <option value="100">≥ 100 亿</option>
+          <option value="500">≥ 500 亿</option>
+        </select>
+      </label>
+      <label class="f">着色
+        <select id="colorBy">
+          <option value="chg" selected>涨跌幅</option>
+          <option value="turnover">换手率</option>
+        </select>
+      </label>
+      <button id="reload">刷新</button>
+      <span class="spacer"></span>
+      <span class="scale">
+        <span>-10%</span>
+        <span class="ramp" id="ramp"></span>
+        <span>+10%</span>
+      </span>
+    </div>
+
+    <div class="breadth" id="breadth">
+      <div class="it"><span class="k">全市场</span><span class="v mut">—</span></div>
+    </div>
+
+    <div class="card">
+      <h2>
+        <span>按申万一级行业分组 · 面积 = 市值</span>
+        <span class="mut" id="hint">把鼠标移到方块上看明细</span>
+      </h2>
+      <div class="body chartbox">
+        <canvas id="cvMap"></canvas>
+        <div class="legendrow">
+          <span class="mut" id="coverage"></span>
+          <span class="mut">板块颜色 = 流通市值加权涨跌，不是官方板块指数</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <b>怎么读这张图</b><br>
+      · <b>面积</b>是该股票的总市值 —— 方块越大，权重越高，它涨跌对指数影响越大<br>
+      · <b>颜色</b>是涨跌幅，红色涨、青色跌，±10% 封顶（ST 股和北证可能超出，按满色画）<br>
+      · <b>板块的涨跌是市值加权的</b>，不是成分股简单平均 ——
+        简单平均会让几只小盘股的暴涨盖过权重股的方向<br>
+      · <span class="mut">这不是官方板块指数：申万指数有自己的成分股权重与调整规则。
+        这里是用全市场快照现算的近似，用途是看方向，不是复现点位。</span>
+    </div>
+
+  </div>
+
+  <div id="tip"></div>
+
+<script type="module">
+const $ = (s) => document.querySelector(s);
+const API = (p, opt) => fetch(p, opt).then(async (r) => {
+  const t = await r.text();
+  let d;
+  try { d = JSON.parse(t); } catch { throw new Error(`接口返回非 JSON：${t.slice(0, 120)}`); }
+  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+});
+
+// ── 色阶 ────────────────────────────────────────────────────
+// A 股习惯：红涨绿（青）跌。中性区用极淡的纸色，避免一屏全是灰色块。
+const NEUTRAL = [240, 242, 244];
+const UP = [192, 50, 42];      // --up   朱红
+const DOWN = [28, 110, 86];    // --down 深青
+const clamp01 = (v) => Math.max(0, Math.min(1, v));
+const mix = (a, b, t) => `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)},${Math.round(a[1] + (b[1] - a[1]) * t)},${Math.round(a[2] + (b[2] - a[2]) * t)})`;
+
+// A 股大多数个股日内涨跌在 ±3% 以内，线性映射会让整张图接近灰白。
+// 用幂曲线提对比：0.2% 也能看出方向，1% 就很明显，3% 以上基本饱和。
+// ⚠️ 这是**视觉增强**，不是数据变换 —— tooltip 里的数字始终是原始值。
+function colorOf(pct) {
+  if (pct === null || pct === undefined) return 'rgb(214,217,220)';   // 无数据（停牌）
+  const t = Math.pow(clamp01(Math.abs(pct) / 4), 0.7);
+  return mix(NEUTRAL, pct >= 0 ? UP : DOWN, 0.16 + 0.84 * t);
+}
+
+function textColorOf(pct) {
+  if (pct === null || pct === undefined) return '#737a82';
+  return Math.abs(pct) / 10 > 0.42 ? '#ffffff' : '#16181c';
+}
+
+// 图例色阶（从 -10% 到 +10% 各取一档）
+(function buildRamp() {
+  const box = $('#ramp');
+  for (let i = 0; i < 11; i++) {
+    const el = document.createElement('i');
+    el.style.background = colorOf(-10 + i * 2);
+    box.appendChild(el);
+  }
+})();
+
+// ── squarified treemap ──────────────────────────────────────
+// 经典 Bruls 算法：每次把若干项塞进「当前行」，取最接近正方形的那个断点。
+// 为什么不用简单切片：切片会让细长的条塞满屏幕，面积读不出来。
+function squarify(items, x, y, w, h) {
+  const out = [];
+  const list = items.filter((it) => it.value > 0);
+  if (!list.length || w <= 0 || h <= 0) return out;
+
+  const total = list.reduce((s, it) => s + it.value, 0);
+  // 归一化到面积
+  const area = w * h;
+  const scaled = list.map((it) => ({ it, a: (it.value / total) * area }));
+
+  let cx = x, cy = y, cw = w, ch = h;
+  let i = 0;
+  while (i < scaled.length) {
+    const shortSide = Math.min(cw, ch);
+    // 逐项加入当前行，直到「最差长宽比」开始变差
+    let row = [], rowArea = 0, best = Infinity;
+    let j = i;
+    while (j < scaled.length) {
+      const next = scaled[j];
+      const tryRow = row.concat([next]);
+      const tryArea = rowArea + next.a;
+      const ratio = worstRatio(tryRow, tryArea, shortSide);
+      if (row.length && ratio > best) break;
+      row = tryRow; rowArea = tryArea; best = ratio; j++;
+    }
+    // 把 row 铺在短边上
+    const horizontal = cw >= ch;      // 宽的时候按列切（行沿 y 增长）
+    const rowThick = rowArea / shortSide;
+    let off = 0;
+    for (const { it, a } of row) {
+      const len = a / rowThick;
+      if (horizontal) {
+        out.push({ it, x: cx, y: cy + off, w: rowThick, h: len });
+        off += len;
+      } else {
+        out.push({ it, x: cx + off, y: cy, w: len, h: rowThick });
+        off += len;
+      }
+    }
+    if (horizontal) { cx += rowThick; cw -= rowThick; }
+    else { cy += rowThick; ch -= rowThick; }
+    i += row.length;
+  }
+  return out;
+}
+
+function worstRatio(row, rowArea, shortSide) {
+  if (!row.length || rowArea <= 0) return Infinity;
+  const thick = rowArea / shortSide;
+  let worst = 0;
+  for (const { a } of row) {
+    const len = a / thick;
+    const r = Math.max(thick / len, len / thick);
+    if (r > worst) worst = r;
+  }
+  return worst;
+}
+
+// ── 状态 ────────────────────────────────────────────────────
+let DATA = null;
+let LAYOUT = [];        // 扁平的命中测试列表：{x,y,w,h,stock,sector}
+let SECTORS = [];       // 板块矩形（画标签用）
+const cv = $('#cvMap');
+const ctx = cv.getContext('2d');
+let dpr = 1, W = 0, H = 0;
+
+function fitCanvas() {
+  dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+  const rect = cv.getBoundingClientRect();
+  W = Math.max(200, Math.round(rect.width));
+  H = Math.max(160, Math.round(cv.clientHeight || 620));
+  if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) {
+    cv.width = Math.round(W * dpr);
+    cv.height = Math.round(H * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function roundRect(x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+function draw() {
+  fitCanvas();
+  ctx.clearRect(0, 0, W, H);
+  LAYOUT = [];
+  SECTORS = [];
+  if (!DATA || !DATA.sectors || !DATA.sectors.length) {
+    ctx.fillStyle = '#737a82';
+    ctx.font = '13px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.fillText('还没有数据', 16, 30);
+    return;
+  }
+
+  const colorBy = $('#colorBy').value;
+  const pad = 3;          // 板块之间的缝
+
+  // 第一层：板块，面积 = 板块总市值
+  const sectorItems = DATA.sectors.map((s) => ({ value: Math.max(1, s.mktcapYi), s }));
+  const sectorRects = squarify(sectorItems, 0, 0, W, H);
+
+  for (const sr of sectorRects) {
+    const s = sr.it.s;
+    const bx = sr.x + pad, by = sr.y + pad;
+    const bw = Math.max(1, sr.w - pad * 2), bh = Math.max(1, sr.h - pad * 2);
+    SECTORS.push({ x: bx, y: by, w: bw, h: bh, sector: s });
+
+    // 板块底：比股票格稍深一点，让板块边界看得见
+    ctx.fillStyle = 'rgba(22,24,28,.05)';
+    ctx.fillRect(bx, by, bw, bh);
+
+    // 第二层：板块内个股，面积 = 个股总市值；顶部留 15px 给板块标题
+    const headH = Math.min(15, bh * 0.28);
+    const stockItems = s.stocks.map((st) => ({ value: Math.max(0.5, st.mktcapYi), st }));
+    const stockRects = squarify(stockItems, bx, by + headH, bw, Math.max(1, bh - headH));
+
+    for (const r of stockRects) {
+      const st = r.it.st;
+      const pct = colorBy === 'turnover' ? null : st.chg;
+      const fill = colorBy === 'turnover'
+        ? mix(NEUTRAL, UP, clamp01((st.turnover || 0) / 12) * 0.9)
+        : colorOf(pct);
+      roundRect(r.x + 0.5, r.y + 0.5, Math.max(0.5, r.w - 1), Math.max(0.5, r.h - 1), 1.5);
+      ctx.fillStyle = fill;
+      ctx.fill();
+
+      // 只在格子够大时写代码/名称，否则一片糊
+      if (r.w > 46 && r.h > 22) {
+        ctx.fillStyle = textColorOf(pct);
+        ctx.font = '600 10px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        const label = r.w > 78 ? st.name : st.code;
+        ctx.fillText(label.slice(0, Math.floor(r.w / 11)), r.x + 4, r.y + 3);
+        if (r.h > 34) {
+          ctx.font = '9px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+          const txt = pct === null || pct === undefined
+            ? (st.suspended ? '停牌' : '—')
+            : `${pct > 0 ? '+' : ''}${pct.toFixed(2)}%`;
+          ctx.fillText(txt, r.x + 4, r.y + 16);
+        }
+      }
+      LAYOUT.push({ x: r.x, y: r.y, w: r.w, h: r.h, stock: st, sector: s.name });
+    }
+
+    // 板块标题：底色半透明白，保证在深色块上也读得出
+    if (bw > 40 && bh > 18) {
+      ctx.fillStyle = 'rgba(255,255,255,.82)';
+      ctx.fillRect(bx, by, Math.min(bw, 150), headH - 1);
+      ctx.fillStyle = '#16181c';
+      ctx.font = '600 10px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const chg = s.chg === null || s.chg === undefined ? '' : ` ${s.chg > 0 ? '+' : ''}${s.chg.toFixed(2)}%`;
+      ctx.fillText(`${s.name}${chg}`.slice(0, Math.floor(bw / 8)), bx + 4, by + 2);
+    }
+  }
+}
+
+// ── 悬浮提示 ────────────────────────────────────────────────
+const tip = $('#tip');
+function hit(x, y) {
+  // 倒序：后画的在上面
+  for (let i = LAYOUT.length - 1; i >= 0; i--) {
+    const r = LAYOUT[i];
+    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return r;
+  }
+  return null;
+}
+
+cv.addEventListener('mousemove', (e) => {
+  const rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (W / rect.width);
+  const y = (e.clientY - rect.top) * (H / rect.height);
+  const r = hit(x, y);
+  if (!r) { tip.style.display = 'none'; cv.style.cursor = 'default'; return; }
+  const st = r.stock;
+  const pct = st.chg === null || st.chg === undefined ? '—'
+    : `<span class="${st.chg >= 0 ? 'up' : 'dn'}">${st.chg > 0 ? '+' : ''}${st.chg.toFixed(2)}%</span>`;
+  tip.innerHTML = `
+    <div class="nm">${st.name} <span class="cd">${st.code}</span>${st.st ? ' <span class="cd">ST</span>' : ''}</div>
+    <div class="cd">${r.sector}${st.suspended ? ' · 停牌' : ''}</div>
+    <div class="rw"><span class="k">现价</span><span class="v">${st.price ?? '—'}</span></div>
+    <div class="rw"><span class="k">涨跌</span><span class="v">${pct}</span></div>
+    <div class="rw"><span class="k">总市值</span><span class="v">${st.mktcapYi ? st.mktcapYi + ' 亿' : '—'}</span></div>
+    <div class="rw"><span class="k">PE</span><span class="v">${st.pe ?? '—'}</span></div>
+    <div class="rw"><span class="k">换手</span><span class="v">${st.turnover != null ? st.turnover + '%' : '—'}</span></div>`;
+  tip.style.display = 'block';
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let px = e.clientX + 14, py = e.clientY + 14;
+  if (px + tw > window.innerWidth - 8) px = e.clientX - tw - 14;
+  if (py + th > window.innerHeight - 8) py = e.clientY - th - 14;
+  tip.style.left = px + 'px';
+  tip.style.top = py + 'px';
+  cv.style.cursor = 'crosshair';
+});
+cv.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
+
+// ── 数据加载 ────────────────────────────────────────────────
+function setStatus(text, cls = '') {
+  $('#status').textContent = text;
+  $('#dot').className = 'dot ' + cls;
+}
+
+function renderBreadth(d) {
+  const b = d.breadth || {};
+  const items = [
+    ['全市场', d.total ?? '—', ''],
+    ['上涨', b.advance ?? '—', 'up'],
+    ['下跌', b.decline ?? '—', 'dn'],
+    ['平盘', b.flat ?? '—', 'mut'],
+    ['行业', (d.sectors || []).length, ''],
+    ['显示', d.shown ?? '—', 'mut'],
+  ];
+  $('#breadth').innerHTML = items.map(([k, v, cls]) => `
+    <div class="it"><span class="k">${k}</span><span class="v ${cls}">${v}</span></div>`).join('');
+}
+
+async function load() {
+  setStatus('加载中…');
+  $('#reload').disabled = true;
+  $('#err').style.display = 'none';
+  const top = $('#top').value;
+  const minCap = $('#minCap').value;
+  try {
+    const d = await API(`/api/heatmap?top=${top}&minCap=${minCap}`);
+    if (d.error) throw new Error(d.error);
+    DATA = d;
+    renderBreadth(d);
+    $('#asOf').textContent = d.asOf || '';
+    $('#coverage').textContent =
+      d.shown === d.total ? `全部 ${d.total} 只` : `显示 ${d.shown} / ${d.total} 只`;
+    setStatus(d.cached ? '已缓存 · ' + (d.asOf || '') : '已更新 · ' + (d.asOf || ''));
+    draw();
+  } catch (e) {
+    setStatus('出错', 'err');
+    $('#err').style.display = 'block';
+    $('#err').textContent = '云图加载失败：' + e.message;
+  } finally {
+    $('#reload').disabled = false;
+  }
+}
+
+$('#reload').addEventListener('click', () => load());
+$('#top').addEventListener('change', () => load());
+$('#minCap').addEventListener('change', () => load());
+$('#colorBy').addEventListener('change', () => draw());
+
+let rz;
+window.addEventListener('resize', () => {
+  clearTimeout(rz);
+  rz = setTimeout(draw, 120);
+});
+
+load();
+</script>
+</body>
+</html>
