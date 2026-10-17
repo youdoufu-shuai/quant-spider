@@ -1,5 +1,5 @@
 import { LIVE_LAYOUTS, eventPlacement, hitEvent, routeTarget, livePose, alpha } from './live-layout.js';
-import { legPose, heartbeatAt, drawSpiderBody } from './spider.js';
+import { legPose, heartbeatAt, drawSpider, drawSpiderBody } from './spider.js';
 import { probePose } from './probes.js';
 
 const ROUTES=['code','model','you'];
@@ -10,7 +10,7 @@ export class LiveRenderer {
     this.canvas=canvas;this.ctx=canvas.getContext('2d',{alpha:false});this.regions=[];
     // 蜘蛛的平滑状态。为什么存在渲染器上：位置要靠「上一帧」算速度，
     // 而速度决定腿部步态 —— 没有上一帧，腿就没法跟着真实移动走。
-    this.spiderPos=null;this.spiderT=null;this.spiderMoving=false;
+    this.spiderPos=null;this.spiderT=null;this.spiderMoving=false;this.spiderVel={x:0,y:0};
     this.trail=[];this.lastPage=null;this.lastFocusKey=null;this.reactAt=-99;
     this.handleClick=event=>{const id=this.hitTest(event.clientX,event.clientY);if(id!==null)onSelect?.(id);};
     canvas.addEventListener('click',this.handleClick);
@@ -97,8 +97,19 @@ export class LiveRenderer {
   focusPoint() {
     const regions = this.regions;
     if (!regions.length) return null;
-    const running = regions.find((r) => r.event.status === 'running');
-    const region = running || regions[regions.length - 1];
+      // 焦点判定：**以最新那一行为主**，只在末尾 3 行内才跟随 running。
+      //
+      // 为什么限制范围：并行调用会同时产生多个 running，而且旧步骤可能因为
+      // 状态没补发而一直卡在 running（这是 live-feed 的 bug，已单独修）。
+      // 无条件取 running 会让蜘蛛跳到列表上方那些陈旧行 —— 看起来就是「乱跳」。
+      // 限制在末尾 3 行内，既能跟随「正在干的那一步」，又保证单调向下。
+      const last = regions.length - 1;
+      let pick = last;
+      for (let i = last; i >= Math.max(0, last - 2); i--) {
+        if (regions[i].event.status === 'running') { pick = i; break; }
+      }
+      const region = regions[pick];
+      const running = pick === last ? null : region;
     // 趴在事件行的**尾部**：压在标签文字上（和原项目趴在词上一致），
     // 但避开右侧那个状态色点，别把它盖掉。
     return {
@@ -113,34 +124,55 @@ export class LiveRenderer {
     };
   }
   stepSpider(focus, time, reducedMotion) {
-    // 没有事件时退回一个安静的待机位（椭圆中心），不绕圈
     const rest = livePose(this.layout, 0, true);
     const goal = focus || rest;
     if (reducedMotion) {
       this.spiderPos = { x: goal.x, y: goal.y };
+      this.spiderVel = { x: 0, y: 0 };
+      this.spiderT = time;
       return { x: goal.x, y: goal.y, vx: 0, vy: 0 };
     }
     if (!this.spiderPos) {
       this.spiderPos = { x: goal.x, y: goal.y };
+      this.spiderVel = { x: 0, y: 0 };
       this.spiderT = time;
       return { x: goal.x, y: goal.y, vx: 0, vy: 0 };
     }
-    // dt 夹住：切标签页回来时 time 会跳很大，别让蜘蛛瞬移
-    const dt = Math.max(1 / 240, Math.min(.1, time - (this.spiderT ?? time)));
+    // dt 夹住：切标签页回来时动画时钟会跳很大
+    const dt = Math.max(1 / 240, Math.min(.05, time - (this.spiderT ?? time)));
     this.spiderT = time;
-    // 指数趋近。有活干时追得急（k=8），等待时慢慢挪（k=2.4）——
-    // 这个差异本身就是「Agent 在忙 vs 在等」的可视信号。
-    const k = focus?.busy ? 8 : 2.4;
-    const a = 1 - Math.exp(-k * dt);
-    const nx = this.spiderPos.x + (goal.x - this.spiderPos.x) * a;
-    const ny = this.spiderPos.y + (goal.y - this.spiderPos.y) * a;
-    const vx = (nx - this.spiderPos.x) / dt;
-    const vy = (ny - this.spiderPos.y) / dt;
-    this.spiderPos = { x: nx, y: ny };
-    // 到位后把速度清零 —— 否则会一直有微小速度，腿永远停不下来
-    const far = Math.hypot(goal.x - nx, goal.y - ny);
-    this.spiderMoving = far > 1.4;
-    return far > 1.4 ? { x: nx, y: ny, vx, vy } : { x: nx, y: ny, vx: 0, vy: 0 };
+
+    // 翻页时整页内容都换了，目标可能横跨半个画布。
+    // 这种情况直接归位 —— 让它横穿画布反而像 bug。
+    const jump = Math.hypot(goal.x - this.spiderPos.x, goal.y - this.spiderPos.y);
+    if (jump > 180) {
+      this.spiderPos = { x: goal.x, y: goal.y };
+      this.spiderVel = { x: 0, y: 0 };
+      return { x: goal.x, y: goal.y, vx: 0, vy: 0 };
+    }
+
+    // 临界阻尼弹簧 + 亚帧步进。
+    // 为什么不用指数趋近：指数趋近是「到得越来越慢」，看起来一顿一顿；
+    // 而且每帧把 dt 夹住会让掉帧时移动量突变。弹簧带速度，动起来是连续的，
+    // 而且返回的速度可以直接喂给腿的步态 —— 走得快腿就迈得快。
+    const k = focus?.busy ? 90 : 45;
+    const damp = 2 * Math.sqrt(k);
+    const sub = Math.max(1, Math.ceil(dt / (1 / 120)));
+    const h = dt / sub;
+    let x = this.spiderPos.x, y = this.spiderPos.y;
+    let vx = this.spiderVel?.x ?? 0, vy = this.spiderVel?.y ?? 0;
+    for (let i = 0; i < sub; i++) {
+      vx += ((goal.x - x) * k - vx * damp) * h;
+      vy += ((goal.y - y) * k - vy * damp) * h;
+      x += vx * h;
+      y += vy * h;
+    }
+    // 速度残量太小就归零，否则腿会永远轻微抖动
+    if (Math.hypot(vx, vy) < 3) { vx = 0; vy = 0; }
+    this.spiderPos = { x, y };
+    this.spiderVel = { x: vx, y: vy };
+    this.spiderMoving = vx !== 0 || vy !== 0;
+    return { x, y, vx, vy };
   }
   web(view,time,reducedMotion,selectedId,body,focus){
     const c=this.ctx,{config}=view,t=config.theme,s=this.layout.scene;
@@ -194,19 +226,15 @@ export class LiveRenderer {
       this.text(config.routes[route].label,p.x-w/2+12,p.y-20,color,12);this.text(route.toUpperCase(),p.x-w/2+12,p.y+37,t.muted,9);}
   }
   spider(body,time,reducedMotion,theme,focus){
-    // 绘制逻辑已抽到 spider.js 的 drawSpiderBody，实时面板与美术查看器共用同一份，
-    // 避免两处画风分叉。
     const c = this.ctx;
 
     // ── 丝囊：身后拖一条丝 ──────────────────────────────────
     // 原项目里蜘蛛爬过的地方会留下被吃掉的痕迹；这里留下它走过的路径。
-    // 不是装饰 —— 它显示这个会话里蜘蛛从哪爬到哪，即 Agent 的推进方向。
     if (this.trail && this.trail.length > 1) {
       c.beginPath();
       c.moveTo(this.trail[0].x, this.trail[0].y);
       for (let i = 1; i < this.trail.length; i++) {
         const prev = this.trail[i - 1], cur = this.trail[i];
-        // 用二次贝塞尔让丝有轻微垂坠，像真的丝而不是折线
         const mx = (prev.x + cur.x) / 2 + 7, my = (prev.y + cur.y) / 2;
         c.quadraticCurveTo(mx, my, cur.x, cur.y);
       }
@@ -215,13 +243,32 @@ export class LiveRenderer {
       c.stroke();
     }
 
-    // 每来一个**新的**步骤，给一次下压脉冲 —— 这是「蜘蛛对 Agent 的动作有反应」
-    // 最直接的那一下。没有它，蜘蛛只是位移，看不出「它注意到了」。
     const age = time - (this.reactAt ?? -99);
     const react = (reducedMotion || age < 0 || age > .5) ? 0 : (1 - age / .5) ** 2;
-    // 放大到 1.45 倍：原项目里蜘蛛在画布上占很大一块，是有存在感的主体；
-    // 这里如果只用 1.0，它缩在一行里像个图标，没有「趴在内容上」的感觉。
-    drawSpiderBody(c, body, time, reducedMotion, theme, { scale: 1.45 * (1 + react * .22) });
+    const S = 1.45 * (1 + react * .18);
+
+    // ⚠️ 这里必须用 drawSpider，不是 drawSpiderBody。
+    //   · drawSpiderBody —— 简化版：只有腿/躯干/核心，**没有触角、没有呼吸、
+    //     没有朝向摆动**。实时面板之前一直用它，所以看起来「不如原项目丝滑」。
+    //   · drawSpider —— 原项目主界面（renderer.js）用的就是它：
+    //     触角摆动、身体呼吸、静止时朝向轻微摇摆、按速度拉伸、按局部速度驱动腿。
+    //
+    // drawSpider 自己会 translate(x,y) + rotate + scale，并且不接缩放参数，
+    // 所以外面套一层 scale 时要把坐标和速度预先除回来。
+    c.save();
+    c.scale(S, S);
+    drawSpider(c, {
+      x: body.x / S,
+      y: body.y / S,
+      time,
+      vx: body.vx / S,
+      vy: body.vy / S,
+      reducedMotion,
+      phase: 0,
+      score: 1,
+      activeProbes: 0,     // 触角全画出来（事件驱动的长臂在 probes.js 里另画）
+    });
+    c.restore();
   }
   stream(view,rect,t){this.panel(rect,'RECENT / EVENT DETAILS',t,'CLICK TASK TO INSPECT');const rows=view.events.slice(-Math.floor((rect.h-45)/29));for(let i=0;i<rows.length;i++){const e=rows[i],y=rect.y+55+i*29,color=view.config.routes[e.route].color;this.text(this.label(e.label,rect.w*.52),rect.x+13,y,t.text,11);this.text(STATUS[e.status],rect.x+rect.w*.60,y,color,10);this.text(e.score===null||e.score===undefined?'分数未提供':Number(e.score).toFixed(3),rect.x+rect.w-13,y,t.muted,10,'right');}}
   stats(view,rect,t){

@@ -74,7 +74,35 @@ export async function startLive(project={}) {
   async function control(command){
     try{if(remote){const result=await api('/control',{method:'POST',body:command});if(result.revision>=meta.revision){meta={...meta,...result};anchor=performance.now();}}else{localStore.control(localId,command);meta=localStore.snapshot(localId);anchor=performance.now();}render(true);}catch(error){toast(error.message);}
   }
-  function cursor(){return meta?resolveCursor(meta,closed?0:performance.now()-anchor):0;}
+    function cursor(){return meta?resolveCursor(meta,closed?0:performance.now()-anchor):0;}
+
+    // ── 平滑动画时钟 ────────────────────────────────────────────
+    // 为什么需要：receiveSnapshot() 每次都会 `anchor=performance.now()`，
+    // 而 cursor() = playback.position + (now-anchor)。快照每 2 秒来一次，
+    // position 是服务端算的时间 —— 于是**动画时间基准每隔 2 秒被重置一次**，
+    // 可能往回跳，也可能往前跳。后果：腿、心跳、触角全都在跳，看起来卡顿。
+    // 实测：每 150ms 场景变化量在 1% 和 3.6% 之间大幅波动，就是这个原因。
+    //
+    // 解法：动画自己维护一个**单调递增**的本地时钟，逐帧 +dt；
+    // 只把服务端时间当作「远期目标」，用很小的比率慢慢校正过去。
+    // 这样动画永远连续，又不会和数据时间越拉越远。
+    let animAt = 0, animPrev = 0;
+    function animCursor(){
+      const raw = cursor();
+      const now = performance.now();
+      const dt = animPrev ? Math.min(.1, (now - animPrev) / 1000) : 0;
+      animPrev = now;
+      // 非实时（回放/暂停）时直接用原始时间，不做平滑 —— 回放要能拖时间轴
+      const liveish = meta && meta.status === 'live' && meta.source !== 'replay' && !closed;
+      if (!liveish){ animAt = raw; return raw; }
+      if (!animAt) animAt = raw;
+      animAt += dt;                     // 本地推进，永远向前
+      const drift = raw - animAt;
+      // 偏差小 → 温和跟随；偏差大 → 限速追赶（每秒最多追 40%），绝不瞬移
+      const rate = Math.abs(drift) > 1.5 ? .4 : .06;
+      animAt += drift * Math.min(1, dt * rate * 10);
+      return animAt;
+    }
   function selectEvent(id){selectedId=id;drawer(true,{focus:false});updateSelection();render(true);}
   function updateSelection(){
     const box=$('#selection');box.replaceChildren();
@@ -100,7 +128,7 @@ export async function startLive(project={}) {
     canvas.style.aspectRatio=config.layout==='portrait'?'4/5':config.layout==='landscape'?'16/9':'1/1';document.body.dataset.layout=config.layout;
   }
   function render(force=false){
-    if(!projection||!meta)return;const at=cursor(),filter=meta.playback.routeFilter||'all';let page=meta.playback.page||0;
+    if(!projection||!meta)return;const at=animCursor(),filter=meta.playback.routeFilter||'all';let page=meta.playback.page||0;
     let view=projection.view(at,{offset:page*PAGE_SIZE,limit:PAGE_SIZE});
     const maxPage=Math.max(0,Math.ceil(view.totalEvents/PAGE_SIZE)-1);
     // live 模式默认**跟最后一页**。不跟的话你在「直播」里看到的永远是
@@ -108,9 +136,18 @@ export async function startLive(project={}) {
     // 用户手动翻页（autoPage=false）时不抢，点了「返回实时」再恢复。
       // 判定用 status+source（和「返回实时」按钮同一个口径），不依赖 playback.mode 的字面值。
       const isLiveStream=meta.status==='live'&&meta.source!=='replay'&&!closed;
-      if(isLiveStream&&autoPage&&page!==maxPage)page=maxPage;
-    if(page>maxPage)page=maxPage;
-    view=projection.view(at,{offset:page*PAGE_SIZE,limit:PAGE_SIZE});
+      if(page>maxPage)page=maxPage;
+      if(isLiveStream&&autoPage){
+        // 滚动窗口：永远显示**最新**的 PAGE_SIZE 条，而不是按页对齐。
+        // § 按页对齐的问题：322 条 / 每页 32 → 最后一页只剩 2 条，列表空掉，
+        //   蜘蛛也跑到最上面去（实测截图里就是只剩 2 行）。
+        // § 滚动窗口下列表永远是满的，蜘蛛稳定停在最新的那一行。
+        const total=view.totalEvents;
+        view=projection.view(at,{offset:Math.max(0,total-PAGE_SIZE),limit:PAGE_SIZE});
+        page=Math.max(0,Math.ceil(total/PAGE_SIZE)-1);
+      }else{
+        view=projection.view(at,{offset:page*PAGE_SIZE,limit:PAGE_SIZE});
+      }
     visiblePage=page;lastView=view;syncConfig(view.config);
     if(view.config.unit==='word'){if(wordConfig!==view.config){wordConfig=view.config;wordTokens=tokenizePrompt(view.config.prompt).tokens;}view={...view,events:view.events.map(event=>({...event,displayLabel:wordTokens[event.tokenIndex]?.word??event.label}))};}
     renderer.render(view,{time:at,reducedMotion,selectedId,page,routeFilter:filter,connection});

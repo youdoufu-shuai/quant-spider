@@ -417,9 +417,10 @@ if (!NO_DISCOVER) {
 }
 
 // ---------- 推送 ----------
+const statusByIndex = new Map();
 let pushedUpto = 0;    // 已推送到 all 的哪个绝对下标
-let lastSub = '';
-let lastStateKey = '';
+let lastStateKey = ''; // 当前步状态指纹（避免重复推送同一状态）
+let lastSub = '';      // 副标题指纹（避免每 2 秒重复调 configure_session）
 
 /** 把一条步骤转成 MCP 事件 */
 function toEvent(absIdx, s, isCurrent) {
@@ -448,17 +449,31 @@ async function sync() {
   const cur = reader.currentStep();
   const curIdx = cur ? all.indexOf(cur) : -1;
 
-  // 需要推送的：新步骤 + 当前步骤的状态变化
+  // 需要推送的：新步骤 + **任何状态变过的已推送步骤**。
+  //
+  // ⚠️ 原来只补发「当前步骤」的状态变化，于是有个真 bug：
+  //    某一步在本轮推送时还是 running，后来它完成了、但已经不是 curIdx
+  //    （更新的步骤顶上了），状态就再也发不出去 ——
+  //    列表里会永远留着「进行中」的陈旧行。
+  //    实测在 322 个事件的面板上看到 299/300 卡在 running，
+  //    蜘蛛还专门跑过去盯着它们，看起来就是「乱跳」。
   const events = [];
+  const statusKeyOf = (s) => (s.done ? (s.ok === false ? 'failed' : 'completed') : 'running');
   for (let i = Math.max(pushedUpto, base); i < all.length; i++) {
-    events.push(toEvent(i, all[i], i === curIdx));
+    const s = all[i];
+    events.push(toEvent(i, s, i === curIdx));
+    statusByIndex.set(i, statusKeyOf(s));
   }
-  // 当前步的状态可能只是"完成"了，也要刷新
-  const stateKey = cur ? `${curIdx}:${cur.done}:${cur.requiresApproval}` : '';
-  if (cur && curIdx >= 0 && curIdx < pushedUpto && stateKey !== lastStateKey) {
-    events.push(toEvent(curIdx, cur, true));
+  // 已推送过、但状态变了的步骤：补发一次更新
+  for (let i = base; i < Math.min(pushedUpto, all.length); i++) {
+    const s = all[i], key = statusKeyOf(s);
+    if (statusByIndex.get(i) !== key) {
+      events.push(toEvent(i, s, i === curIdx));
+      statusByIndex.set(i, key);
+    }
   }
-  lastStateKey = stateKey;
+  for (const k of statusByIndex.keys()) if (k < base) statusByIndex.delete(k);
+  lastStateKey = cur ? `${curIdx}:${cur.done}:${cur.requiresApproval}` : '';
 
   if (!events.length && !changed) return;
   pushedUpto = all.length;
