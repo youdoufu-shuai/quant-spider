@@ -198,6 +198,37 @@
     <div class="body" id="sectors"></div>
   </div>
 
+  <!-- AI 组合：把选股结果建成模拟盘组合，跟踪收益 -->
+  <div class="card" id="pfCard">
+    <h2><span>AI 组合 · 看收益</span><span class="mut" id="pfMeta">—</span></h2>
+    <div class="body" id="pfBody">
+      <div class="note ok" style="margin:0">
+        <b>把选出的股票建成一个组合，跟踪它到底赚不赚钱。</b><br>
+        这是验证「AI 选股有没有用」的唯一办法 —— 光看名单没法知道。
+        等权买入、不做调仓，每天刷新价格，跟上证指数对比。<br><br>
+        <b>为什么不做调仓</b>：这里要验证的是<b>选股质量</b>，不是交易技巧。
+        等权持有是难度最低、最难作弊的基准 —— 如果这样都跑不赢指数，
+        那选股逻辑就有问题，不该用权重优化去掩盖。
+      </div>
+      <div class="row" style="margin-top:11px;align-items:flex-end">
+        <label class="f">总资金
+          <select id="pfCapital">
+            <option value="500000">50 万</option>
+            <option value="1000000" selected>100 万</option>
+            <option value="2000000">200 万</option>
+            <option value="5000000">500 万</option>
+          </select>
+        </label>
+        <button id="pfCreate" class="primary" disabled>用当前选股结果建组合</button>
+        <button id="pfRefreshAll">刷新全部行情</button>
+        <span class="mut" id="pfHint" style="align-self:center;font-size:10px">
+          先在上面跑一次选股
+        </span>
+      </div>
+      <div id="pfList" style="margin-top:12px"><span class="mut">加载中…</span></div>
+    </div>
+  </div>
+
   <!-- 说明 -->
   <div class="card">
     <h2>这套选股是怎么工作的</h2>
@@ -353,6 +384,16 @@ async function run(noAi) {
     const secs = ((Date.now() - t0) / 1000).toFixed(1);
     $('status').textContent = `完成 · ${secs}s${d.cached ? '（缓存）' : ''}`;
     $('dot').style.background = 'var(--ok)';
+
+    // 有结果了才允许建组合
+    const nPick = (d.picks && d.picks.length)
+      ? d.picks.length : (d.results || []).length;
+    if (nPick > 0) {
+      $('pfCreate').disabled = false;
+      $('pfHint').textContent = (d.picks && d.picks.length)
+        ? `可建仓 ${Math.min(nPick, Number($('pickN').value))} 只（AI 选中的）`
+        : `可建仓 ${Math.min(nPick, Number($('pickN').value))} 只（按 L2 排序）`;
+    }
   } catch (e) {
     fail('选股失败：' + e.message);
   } finally {
@@ -538,7 +579,182 @@ function renderSectors(d) {
     </div>`).join('');
 }
 
-boot();
+// ══════════════════════════════════════════════════════════
+//  AI 组合 —— 把选股结果建成模拟盘组合，跟踪收益
+// ══════════════════════════════════════════════════════════
+//
+// 为什么单独一套 API 而不是复用 /api/paper/*：
+//   模拟盘会话是**单标的**的，组合是多标的。硬套要建 N 个会话，
+//   还会撞上 MAX_SESSIONS=8 的淘汰逻辑（组合成员会被静默删掉）。
+const pctSign = v => (v === null || v === undefined) ? '—'
+  : (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+const clsRet = v => (v === null || v === undefined) ? 'mut'
+  : v > 0 ? 'up' : v < 0 ? 'dn' : 'mut';
+
+async function loadPortfolios() {
+  try {
+    const list = await api('/api/portfolio/list');
+    renderPortfolios(Array.isArray(list) ? list : []);
+  } catch (e) {
+    $('pfList').innerHTML = `<span class="up">读取组合失败：${esc(e.message)}</span>`;
+  }
+}
+
+function renderPortfolios(list) {
+  $('pfMeta').textContent = list.length ? `${list.length} 个组合` : '还没有组合';
+  if (!list.length) {
+    $('pfList').innerHTML = `<div class="mut" style="padding:8px 0">
+      还没有组合。先在上面跑一次选股，然后点「用当前选股结果建组合」。</div>`;
+    return;
+  }
+  $('pfList').innerHTML = list.map(p => {
+    const ex = p.excessReturn;
+    const exTxt = ex === null || ex === undefined ? '—' : pctSign(ex);
+    return `<div class="pick" style="margin-bottom:9px">
+      <div class="hd">
+        <span class="nm">${esc(p.label)}</span>
+        <span class="cd">${esc(p.id)}</span>
+        <span class="tag">${p.mode === 'ai' ? 'AI 排序' : '本地打分'}</span>
+        <span class="tag">${p.holdingsCount} 只</span>
+        <span class="cf ${clsRet(p.totalReturn)}">
+          收益 <b>${pctSign(p.totalReturn)}</b></span>
+      </div>
+      <div class="meta">
+        <span class="k">资金</span><span class="v">${fmt(p.initial, 0)} → ${fmt(p.equity, 0)}</span>
+        <span class="k">基准</span><span class="v">上证指数 ${pctSign(p.benchmarkReturn)}</span>
+        <span class="k">超额</span><span class="v ${clsRet(ex)}"><b>${exTxt}</b></span>
+        <span class="k">建仓</span><span class="v mut">${esc(p.createdAt)}</span>
+        <span class="k">刷新</span><span class="v mut">${esc(p.updatedAt)}</span>
+      </div>
+      <div class="row" style="margin-top:8px;gap:7px">
+        <button data-pf-show="${esc(p.id)}" style="font-size:10px;padding:3px 9px">看持仓</button>
+        <button data-pf-refresh="${esc(p.id)}" style="font-size:10px;padding:3px 9px">刷新</button>
+        <button data-pf-del="${esc(p.id)}" style="font-size:10px;padding:3px 9px">删除</button>
+      </div>
+      <div id="pfDetail-${esc(p.id)}" style="margin-top:9px"></div>
+    </div>`;
+  }).join('');
+
+  $('pfList').querySelectorAll('[data-pf-show]').forEach(b => {
+    b.onclick = () => showPortfolio(b.dataset.pfShow);
+  });
+  $('pfList').querySelectorAll('[data-pf-refresh]').forEach(b => {
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = '刷新中…';
+      try {
+        await api(`/api/portfolio/${encodeURIComponent(b.dataset.pfRefresh)}/refresh`,
+                  { method: 'POST' });
+        await loadPortfolios();
+      } catch (e) {
+        $('pfList').insertAdjacentHTML('afterbegin',
+          `<div class="note warn" style="margin:0 0 9px">刷新失败：${esc(e.message)}</div>`);
+        b.disabled = false; b.textContent = '刷新';
+      }
+    };
+  });
+  $('pfList').querySelectorAll('[data-pf-del]').forEach(b => {
+    b.onclick = async () => {
+      if (!confirm('删除这个组合？历史收益会一起删掉。')) return;
+      try {
+        await api(`/api/portfolio/${encodeURIComponent(b.dataset.pfDel)}`,
+                  { method: 'DELETE' });
+        await loadPortfolios();
+      } catch (e) { alert('删除失败：' + e.message); }
+    };
+  });
+}
+
+async function showPortfolio(id) {
+  const box = $('pfDetail-' + id);
+  if (!box) return;
+  if (box.innerHTML) { box.innerHTML = ''; return; }   // 再点一次收起
+  box.innerHTML = '<span class="mut">加载中…</span>';
+  try {
+    const d = await api(`/api/portfolio/${encodeURIComponent(id)}`);
+    const rows = (d.holdings || []).map(h => `
+      <tr>
+        <td>${esc(h.symbol)}</td>
+        <td><b>${esc(h.name)}</b></td>
+        <td><span class="tag">${esc(h.sector)}</span></td>
+        <td class="num">${fmt(h.qty, 0)}</td>
+        <td class="num">${fmt(h.entryPrice)}</td>
+        <td class="num">${fmt(h.lastPrice)}</td>
+        <td class="num ${clsOf(h.pnl)}">${fmt(h.pnl, 0)}</td>
+        <td class="num ${clsRet(h.pnlPct)}"><b>${pctSign(h.pnlPct)}</b></td>
+        <td class="num">${fmt(h.weight, 1)}%</td>
+      </tr>`).join('');
+    box.innerHTML = `
+      <div class="tablewrap" style="max-height:none">
+        <table><thead><tr>
+          <th>代码</th><th>名称</th><th>行业</th><th>股数</th>
+          <th>买入价</th><th>现价</th><th>盈亏</th><th>盈亏%</th><th>权重</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+      </div>
+      ${(d.problems && d.problems.length) ? `
+        <div class="note warn" style="margin:9px 0 0">
+          <b>建仓时的问题</b><br>${d.problems.map(esc).join('<br>')}</div>` : ''}
+      ${(d.notes && d.notes.length) ? `
+        <div class="note" style="margin:9px 0 0">
+          <b>备注</b><br>${d.notes.map(esc).join('<br>')}</div>` : ''}`;
+  } catch (e) {
+    box.innerHTML = `<span class="up">读取失败：${esc(e.message)}</span>`;
+  }
+}
+
+async function createPortfolio() {
+  if (!LAST) { return; }
+  // 优先用 AI 选中的（有理由），否则用 L2 排序的前几只
+  const picks = (LAST.picks && LAST.picks.length) ? LAST.picks : (LAST.results || []);
+  if (!picks.length) { alert('当前没有选股结果'); return; }
+  const capital = Number($('pfCapital').value) || 1000000;
+  const mode = (LAST.picks && LAST.picks.length) ? 'ai' : 'local';
+  const topN = Number($('pickN').value) || 8;
+  const chosen = picks.slice(0, topN);
+
+  $('pfCreate').disabled = true;
+  $('pfCreate').textContent = '建仓中…';
+  try {
+    const d = await api('/api/portfolio/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        strategy: LAST.strategy || CUR,
+        picks: chosen, capital, mode,
+        label: `AI 组合 · ${LAST.label || CUR} · ${new Date().toLocaleDateString('zh-CN')}`,
+      }),
+    });
+    $('status').textContent = `组合已建仓 · ${d.holdingsCount} 只`;
+    await loadPortfolios();
+    // 建完自动展开明细
+    setTimeout(() => showPortfolio(d.id), 120);
+  } catch (e) {
+    alert('建组合失败：' + e.message);
+  } finally {
+    $('pfCreate').disabled = false;
+    $('pfCreate').textContent = '用当前选股结果建组合';
+  }
+}
+
+$('pfCreate').onclick = createPortfolio;
+$('pfRefreshAll').onclick = async () => {
+  const list = await api('/api/portfolio/list');
+  if (!Array.isArray(list) || !list.length) { alert('还没有组合'); return; }
+  $('pfRefreshAll').disabled = true;
+  $('pfRefreshAll').textContent = '刷新中…';
+  try {
+    for (const p of list) {
+      await api(`/api/portfolio/${encodeURIComponent(p.id)}/refresh`,
+                { method: 'POST' }).catch(() => {});
+    }
+    await loadPortfolios();
+  } finally {
+    $('pfRefreshAll').disabled = false;
+    $('pfRefreshAll').textContent = '刷新全部行情';
+  }
+};
+
+boot().then(loadPortfolios);
+
 </script>
 </body>
 </html>

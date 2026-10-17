@@ -60,8 +60,22 @@ CACHE_FILE = CACHE_DIR / "symbols-cache.json"
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
 
-# 全量列表的缓存时长。A 股新股上市不会天天变，一天足够了。
-CACHE_TTL_SEC = 12 * 3600
+# 全量列表的缓存时长。
+#
+# ⚠️ 这里改过：原来是 12 小时，实测是个**危险的脆弱点**。
+#    重新枚举要 70 秒（51997 个代码逐个探测），而 12 小时就判定过期。
+#    结果：每天至少有两次「过期期间来的第一个请求」会阻塞 70 秒，
+#    超过 HTTP 超时（30 秒）→ 返回 500 → 依赖它的页面（专业图表、
+#    模拟盘）全部卡在「加载中」。
+#
+#    两个修复：
+#      1. TTL 提到 7 天 —— A 股一周内新增几只新股，列表长度变化
+#         在万分之一级别，对选股/看图毫无影响。
+#      2. 见 fetch_ashare_list：缓存只要还在（90 天内），
+#         就先用旧的返回，不阻塞。要强制刷新用 force=True。
+CACHE_TTL_SEC = 7 * 24 * 3600
+# 超过这个年龄才认为缓存彻底不可用（宁愿枚举也不返回上古数据）
+CACHE_STALE_MAX_SEC = 90 * 24 * 3600
 
 
 # ============================================================
@@ -113,7 +127,17 @@ def _save_cache(data: dict) -> None:
 
 
 def _fresh(entry: dict | None) -> bool:
-    return bool(entry) and (time.time() - entry.get("at", 0)) < CACHE_TTL_SEC
+    """
+    缓存是否新鲜可用。
+
+    ⚠️ 必须同时要求 items 非空。只判断 `bool(entry)` 是不够的 ——
+       `{"at": ..., "items": []}` 本身是真值，会被当成「新鲜」，
+       于是返回空列表且**永远不去枚举**，页面上一只股票都没有。
+       实测踩过（写了个空缓存的情况）。
+    """
+    return (bool(entry)
+            and bool(entry.get("items"))
+            and (time.time() - entry.get("at", 0)) < CACHE_TTL_SEC)
 
 
 # ============================================================
@@ -254,8 +278,27 @@ def fetch_ashare_list(force: bool = False) -> list[dict]:
     其中 code 与 sina 都是带前缀代码（保持与旧调用方兼容）。
     """
     cache = _load_cache()
-    if not force and _fresh(cache.get("ashare2")):
-        return cache["ashare2"]["items"]
+    entry = cache.get("ashare2")
+    if not force and _fresh(entry):
+        return entry["items"]
+
+    # ⚠️ 缓存过期但还在 → **先用旧数据返回，不阻塞**。
+    #
+    #    为什么：重新枚举要 70 秒，而 API 超时是 30 秒。
+    #    如果这里死等，请求会 500，页面卡在「加载中」（实测踩过：
+    #    专业图表和模拟盘都因此打不开）。
+    #    旧的股票列表（几天前的）对看图/选股完全够用 ——
+    #    A 股一周新增几只新股，不影响任何现有代码的查询。
+    #
+    #    想强制刷新：fetch_ashare_list(force=True)，
+    #    或删 quant/state/symbols-cache.json 后重启。
+    if (not force and entry and entry.get("items")
+            and time.time() - entry.get("at", 0) < CACHE_STALE_MAX_SEC):
+        age_d = (time.time() - entry.get("at", 0)) / 86400
+        print(f"  ⚠ 股票列表缓存已 {age_d:.1f} 天"
+              f"（TTL {CACHE_TTL_SEC/86400:.0f} 天），先用旧数据"
+              f"（{len(entry['items'])} 只）", file=sys.stderr)
+        return entry["items"]
 
     print("  正在枚举全量 A 股（约 70 秒，只需一次）…", file=sys.stderr)
 
@@ -300,8 +343,13 @@ def fetch_crypto_list(force: bool = False) -> list[dict]:
     ⚠️ 响应 17MB / 10.4 秒 —— 必须缓存，绝不能每次请求都拉。
     """
     cache = _load_cache()
-    if not force and _fresh(cache.get("crypto")):
-        return cache["crypto"]["items"]
+    centry = cache.get("crypto")
+    if not force and _fresh(centry):
+        return centry["items"]
+    # 同 A 股：过期缓存先用着，不阻塞（加密只有 511 个交易对，变更更少）
+    if (not force and centry and centry.get("items")
+            and time.time() - centry.get("at", 0) < CACHE_STALE_MAX_SEC):
+        return centry["items"]
 
     items: list[dict] = []
     last_err: Exception | None = None

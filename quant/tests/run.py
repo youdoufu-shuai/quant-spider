@@ -23,6 +23,7 @@ import argparse
 import importlib
 import json
 import os
+import os
 import sys
 import time
 from pathlib import Path
@@ -30,6 +31,18 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent          # quant/tests
 QUANT = HERE.parent                             # quant
 REPO = QUANT.parent                             # 仓库根
+
+# ⚠️ 全局离线开关，必须在 import 任何 quant 模块**之前**设。
+#
+# 为什么：量化测试套件是**离线**的（CI 用 --offline 跑，超时 300 秒）。
+# 但 screener.classify_sector 默认会去拉「申万一级行业映射」（2.5 秒 + 网络）。
+# 不拦住的话：
+#   · 离线测试真的联网 → 慢、不稳定、CI 可能超时
+#   · 结果依赖本机缓存 → 同一份代码在不同机器上跑出不同结果
+#
+# 设了之后 screener 直接走名称关键词兜底，测试可复现。
+# 要测「真实映射」的路径，用 screener.set_industry_map() 手工注入。
+os.environ["QUANT_OFFLINE"] = "1"
 
 # ⚠️ 插入顺序：**倒着插**，因为 insert(0) 是往前放。
 #    写成正序（tests, quant, repo）会让最终的 path 变成 [repo, quant, tests] ——
@@ -53,6 +66,8 @@ TEST_FILES = [
     "test_edge_cases.py",
     "test_perf.py",
     "test_screener.py",
+    "test_ai_portfolio.py",
+    "test_symbols_cache.py",
 ]
 
 BANNED_NAMES = {
@@ -76,6 +91,8 @@ MIN_CASES_PER_FILE = {
     "test_edge_cases.py": 40,
     "test_perf.py": 2,
     "test_screener.py": 30,
+    "test_ai_portfolio.py": 15,
+    "test_symbols_cache.py": 5,
 }
 
 

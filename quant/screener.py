@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.request
@@ -466,11 +467,19 @@ def score_cross_section(cands: list[Snapshot],
             total += pct * w
             wsum += w
         score = total / wsum if wsum > 0 else 50.0
+        sec = classify_sector(s.name, s.symbol)
         out.append({
             "snapshot": s,
             "score": round(score, 2),
             "rawScore": round(score, 2),
-            "sector": classify_sector(s.name),
+            "sector": sec,
+            # ── 配额用的键 ──
+            # ⚠️ 「其它」是「没分类」的兜底桶，**不能当做一个行业**参与配额。
+            #    踩过：某策略选出的前 30 只里有 11 只「其它」，它们分属
+            #    完全不同的行业（只是名称不含我的关键词），却被压在同一个
+            #    配额里 —— 既错误地限制了它们，也让分散度统计失去意义。
+            #    所以未分类的每只单独成桶（用代码做键，互不竞争）。
+            "quotaKey": sec if sec != "其它" else f"其它:{s.symbol}",
             "factors": parts,
             "penalty": 0.0,
         })
@@ -490,32 +499,42 @@ def score_cross_section(cands: list[Snapshot],
 
     # ── 行业分散：两段式，先装满配额内的，再用罚分补足 ──
     #
-    # ⚠️ 这段改过两次，两次都是真 bug，留给后来人：
+    # ⚠️ 这段改过三次，三次都是真 bug，留给后来人：
     #    v1 边选边扣分、扣完塞回队列 → 候选全属同一行业时会把股票
     #       `pool.remove` 掉，**静默少返回**（4 只只回 3 只）
     #    v2 兜底循环里忘了更新 per_sector → 同行业第二只被反复跳过，
     #       4 只只回 1 只（实测）
-    #    现在：配额内直接选；不够则用「原始分 - 罚分」排序补足；
-    #    每补一只就更新计数，保证不会死循环也不会少给。
+    #    v3 用 `same - max` 算超配额数 → 第 3 只（配额 2）罚分为 0，
+    #       实测 top=30 时金融 3 只、罚分全 0，配额形同失效
+    #
+    # 现在：配额内直接选；不够则按「原始分 - 罚分」排序补足；
+    # 每补一只就更新计数，保证不会死循环也不会少给。
+    #
+    # ⚠️ 配额用 `quotaKey` 而不是 `sector`：
+    #    「其它」是没分类的兜底桶，每只单独成键，不互相竞争配额。
     selected: list[dict] = []
     per_sector: dict[str, int] = {}
     for x in out:
         if len(selected) >= limit:
             break
-        sec = x["sector"]
-        if per_sector.get(sec, 0) >= max_per_sector:
+        key = x["quotaKey"]
+        if per_sector.get(key, 0) >= max_per_sector:
             continue
-        per_sector[sec] = per_sector.get(sec, 0) + 1
+        per_sector[key] = per_sector.get(key, 0) + 1
         x["penalty"] = 0.0
         x["score"] = x["rawScore"]
         selected.append(x)
 
     # 给落选的算一个「罚分后的分数」，并按它排序作为补足顺序。
-    # 罚分随「该行业已入选只数」递增，所以同行业越多越吃亏。
+    #
+    # ⚠️ `over` 里的 +1 不能省：某行业已入选 2 只、配额 2 时，
+    #    第 3 只的 over 应该是 **1**（它是第 1 个超配额的）。
+    def _over(x: dict) -> int:
+        same = per_sector.get(x["quotaKey"], 0)
+        return (same - max_per_sector + 1) if same >= max_per_sector else 0
+
     def penalized(x: dict) -> float:
-        same = per_sector.get(x["sector"], 0)
-        over = same - max_per_sector
-        return x["rawScore"] - (penalty * over if over > 0 else 0.0)
+        return x["rawScore"] - penalty * _over(x)
 
     if len(selected) < limit:
         rest = [x for x in out if x not in selected]
@@ -523,12 +542,11 @@ def score_cross_section(cands: list[Snapshot],
         for x in rest:
             if len(selected) >= limit:
                 break
-            same = per_sector.get(x["sector"], 0)
-            over = same - max_per_sector
-            x["penalty"] = round(penalty * over, 2) if over > 0 else 0.0
+            over = _over(x)
+            x["penalty"] = round(penalty * over, 2)
             x["score"] = round(x["rawScore"] - x["penalty"], 2)
             # ⚠️ 必须更新计数，否则同一行业的后续股票会被反复算成同一 over
-            per_sector[x["sector"]] = same + 1
+            per_sector[x["quotaKey"]] = per_sector.get(x["quotaKey"], 0) + 1
             selected.append(x)
 
     return selected
@@ -546,79 +564,217 @@ def score_cross_section(cands: list[Snapshot],
 #  条件下载必然霸榜。但这样的名单没有任何实用价值：
 #  买 10 只银行和买 1 只银行的风险几乎一样，等于没分散。
 #
-#  AlphaSift 用「组合风险桶 + max_same_bucket」解决这个问题。
-#  这里用同样的思路，但行业判定不引入新依赖 —— 用**名称关键词**。
+#  ═════════════════════════════════════════════════════════════
+#  ★ 第一版用名称关键词猜行业，覆盖率只有 ~50%，不可用
+#  ═════════════════════════════════════════════════════════════
+#  实测：volume_breakout 策略选出的前 30 只里 **21 只被判为「其它」**，
+#  而这 21 只实际分属 10 多个完全不同的行业（远东股份=电力设备、
+#  内蒙一机=国防军工、中科曙光=计算机…）。名称里根本不含行业词，
+#  猜不出来。这样分散度控制等于没生效。
 #
-#  ⚠️ 这是启发式，不是真实的行业分类：
-#     · 「XX银行」→ 金融，几乎不会错
-#     · 但「中国建筑」「山东路桥」这类要靠词典命中，覆盖不全
-#     · 命中不了的归入「其它」，各自独立成桶（等于不限制）
-#     要精确分类需要 akshare/tushare 的行业数据，本项目不引入。
-#     影响有限：命不中的往往是分散的个股，本来也不会挤在一桶里。
-#  ⚠️ 两条硬约束（有测试守着）：
-#     1. **同一关键词不能出现在两个行业里** —— 否则判定依赖规则顺序，容易出错
-#     2. **规则顺序有意义** —— 先匹配的优先
+#  ★ 现在用新浪的申万一级行业节点
+#  ═════════════════════════════════════════════════════════════
+#  `Market_Center.getHQNodes` 返回完整节点树，里面 `sw1_*` 是申万一级：
 #
-#  覆盖面说明：中国很多公司名里不含行业词（「贵州茅台」没有「白酒」、
-#  「中国平安」没有「保险」），所以品牌词必须单独列。
-#  这类词是靠实测选股结果补的（见 test_screener.py 的典型标的测试）。
+#      getHQNodes → [["A股",[["申万一级",[["农林牧渔","","sw1_110000"],...]]]]]
+#      getHQNodeData?node=sw1_110000 → 该行业全部成员
+#
+#  实测：31 个行业、**覆盖率 99.7%**（5560/5576）、拉取 **2.5 秒**。
+#  结果缓存 7 天（行业归属很少变），缓存命中时 0 开销。
+#
+#  ⚠️ 退化策略：缓存没有 + 网络失败时，回退到名称关键词。
+#     名称法覆盖率低，但聊胜于无 —— 不能因为拿不到行业就整个筛选失败。
+INDUSTRY_CACHE = HERE / "state" / "industry-map.json"
+INDUSTRY_TTL_DAYS = 7
+INDUSTRY_NODES_URL = (HQ_BASE.replace("Market_Center.getHQNodeData",
+                                      "Market_Center.getHQNodes"))
+
+# 行业映射的进程内缓存。None = 还没加载过。
+_INDUSTRY_MAP: dict[str, str] | None = None
+
+# 名称关键词兜底（覆盖率低，仅在拿不到真实映射时用）
 SECTOR_RULES: list[tuple[str, tuple[str, ...]]] = [
-    # 金融：名称含「银行/证券/保险」的，加上几个品牌名
-    ("金融", ("银行", "证券", "保险", "信托", "期货", "农商", "信用社",
-              "中国平安", "中国人寿", "中国太保", "新华保险", "中国人保",
-              "中信", "东方财富", "同花顺", "国泰君安", "华泰", "招商证券")),
-    # 地产建筑：注意「中铁」「铁建」要排在「钢铁」之前（顺序有意义）
+    ("金融", ("银行", "证券", "保险", "信托", "期货", "农商", "信用社")),
     ("地产建筑", ("地产", "置业", "城建", "建筑", "建设", "路桥", "铁建",
                   "中铁", "建工", "隧道", "工程", "基建", "水泥", "建材",
-                  "钢构", "中国建筑", "中国交建", "中国电建", "中国能建")),
-    ("钢铁", ("钢铁", "钢股份", "特钢", "不锈钢", "钢管", "宝钢", "鞍钢",
-              "河钢", "沙钢")),
-    ("煤炭", ("煤业", "煤炭", "煤电", "焦煤", "焦炭", "中国神华", "陕西煤业",
-              "兖矿", "潞安")),
-    ("有色", ("有色", "铜业", "铝业", "锌业", "稀土", "黄金", "矿业", "钨业",
-              "钼业", "明泰", "紫金", "洛阳钼业", "山东黄金")),
-    ("化工", ("化工", "化学", "石化", "化纤", "橡胶", "塑料", "农药", "涂料",
-              "中国石化", "中国石油", "荣盛", "恒力", "万华")),
-    # 医药放在消费之前 —— 「医药」不含消费词，但「健康」类可能歧义
-    ("医药", ("医药", "制药", "药业", "生物", "医疗", "疫苗", "健康", "基因",
-              "恒瑞", "云南白药", "片仔癀", "爱尔眼科", "智飞")),
-    # 农业必须排在消费之前（否则下面的「农业」会把农业股吃掉）
-    ("农业", ("种业", "农业", "牧业", "饲料", "化肥", "林业", "渔业", "养殖",
-              "牧原", "温氏", "海大", "隆平")),
-    ("消费", ("食品", "饮料", "白酒", "酒业", "乳业", "肉业", "纺织", "服装",
-              "服饰", "鞋业", "家纺", "零售", "商业", "百货", "超市", "旅游",
-              "酒店", "餐饮", "家电", "电器", "家居", "家具", "贵州茅台",
-              "五粮液", "泸州老窖", "洋河", "伊利", "蒙牛", "海天", "双汇",
-              "美的", "格力", "海尔", "中国中免", "永辉")),
-    ("汽车", ("汽车", "客车", "重汽", "轮胎", "零部件", "车业", "摩托",
-              "比亚迪", "长城汽车", "上汽", "广汽", "长安", "华域")),
-    ("科技", ("科技", "软件", "信息", "网络", "数据", "智能", "电子", "半导体",
-              "芯片", "光电", "通信", "通讯", "计算机", "数码", "互联网",
-              "中兴", "海康", "大华", "京东方", "立讯", "歌尔", "用友")),
-    ("新能源", ("新能源", "光伏", "锂", "电池", "储能", "风电", "核电", "氢能",
-                "太阳能", "隆基", "通威", "阳光电源", "天齐", "赣锋", "亿纬",
-                "宁德时代", "比亚迪电池", "国轩", "孚能", "欣旺达")),
-    ("电力公用", ("电力", "水电", "燃气", "水务", "环保", "热力", "公用事业",
-                  "长江电力", "华能", "国电", "大唐", "华电")),
-    # 「航空」只在交运里出现一次（机械军工改用「航发」避免重复）
-    ("交运", ("航空", "机场", "港口", "航运", "物流", "铁路", "高速", "快递",
-              "海运", "京沪高铁", "大秦铁路", "顺丰")),
-    ("机械军工", ("机械", "重工", "装备", "机床", "轴承", "军工", "航发",
-                  "航天", "船舶", "兵器", "机电", "三一", "中联重科", "徐工",
-                  "中国重工", "中航")),
-    ("传媒", ("传媒", "文化", "影视", "出版", "广电", "游戏", "教育",
-              "分众", "芒果", "光线")),
+                  "钢构")),
+    ("钢铁", ("钢铁", "钢股份", "特钢", "不锈钢", "钢管", "宝钢", "鞍钢")),
+    ("煤炭", ("煤业", "煤炭", "煤电", "焦煤", "焦炭", "神华")),
+    ("有色金属", ("有色", "铜业", "铝业", "锌业", "稀土", "黄金", "矿业",
+                  "钨业", "钼业")),
+    ("基础化工", ("化工", "化学", "石化", "化纤", "橡胶", "塑料", "农药",
+                  "涂料")),
+    ("医药生物", ("医药", "制药", "药业", "生物", "医疗", "疫苗", "健康",
+                  "基因")),
+    ("农林牧渔", ("种业", "农业", "牧业", "饲料", "化肥", "林业", "渔业",
+                  "养殖")),
+    ("食品饮料", ("食品", "饮料", "白酒", "酒业", "乳业", "肉业")),
+    ("纺织服饰", ("纺织", "服装", "服饰", "鞋业", "家纺")),
+    ("商贸零售", ("零售", "商业", "百货", "超市")),
+    ("社会服务", ("旅游", "酒店", "餐饮", "教育")),
+    ("家用电器", ("家电", "电器", "家居", "家具")),
+    ("汽车", ("汽车", "客车", "重汽", "轮胎", "零部件", "车业", "摩托")),
+    ("电子", ("科技", "电子", "半导体", "芯片", "光电", "数码")),
+    ("计算机", ("软件", "计算机", "信息", "网络", "数据", "智能", "互联网")),
+    ("通信", ("通信", "通讯")),
+    ("电力设备", ("新能源", "光伏", "锂", "电池", "储能", "风电", "核电",
+                  "氢能", "太阳能")),
+    ("公用事业", ("电力", "水电", "燃气", "水务", "环保", "热力", "公用")),
+    ("机械设备", ("机械", "重工", "装备", "机床", "轴承", "机电")),
+    ("国防军工", ("军工", "航发", "航天", "船舶", "兵器", "航空")),
+    ("交通运输", ("机场", "港口", "航运", "物流", "铁路", "高速", "快递",
+                  "海运")),
+    ("传媒", ("传媒", "文化", "影视", "出版", "广电", "游戏")),
 ]
 
 
-def classify_sector(name: str) -> str:
+def _fetch_industry_map(verbose: bool = False) -> dict[str, str]:
     """
-    按名称关键词猜行业。命中不了返回「其它」。
+    从新浪拉申万一级行业 → 股票映射。
 
-    顺序有讲究：先匹配的规则优先。比如「中国中铁」既含「中铁」也含「铁」，
-    但「地产建筑」规则里同时有「中铁」和「铁建」，且排在「钢铁」之前，
-    所以会被正确归到地产建筑而不是钢铁。
+    实测：31 个行业、覆盖率 99.7%、并发 8 约 2.5 秒。
     """
+    import urllib.request
+
+    def _get(url: str) -> str:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": UA, "Referer": HQ_REFERER, "Accept": "*/*"})
+        with urllib.request.urlopen(req, timeout=20) as r:
+            return r.read().decode("utf8", "replace")
+
+    tree = json.loads(_get(INDUSTRY_NODES_URL))
+
+    def walk(node):
+        """递归找所有 (名称, 代码) 三元组。"""
+        out = []
+        if isinstance(node, list):
+            if (len(node) == 3 and isinstance(node[0], str)
+                    and isinstance(node[2], str) and node[2]):
+                out.append((node[0], node[2]))
+            else:
+                for x in node:
+                    out.extend(walk(x))
+        return out
+
+    sw1 = [(n, c) for n, c in walk(tree) if c.startswith("sw1_")]
+    if not sw1:
+        raise RuntimeError("节点树里没有 sw1_* 申万一级节点")
+
+    def members(code: str) -> list[dict]:
+        rows: list[dict] = []
+        for page in range(1, 8):          # 最大的行业约 600 只 → 6 页
+            body = _get(f"{HQ_BASE}?page={page}&num=100&sort=symbol&asc=1"
+                        f"&node={code}&symbol=&_s_r_a=page")
+            try:
+                batch = json.loads(body) if body.strip().startswith("[") else []
+            except json.JSONDecodeError:
+                batch = []
+            if not batch:
+                break
+            rows.extend(batch)
+            if len(batch) < 100:
+                break
+        return rows
+
+    mapping: dict[str, str] = {}
+    with ThreadPoolExecutor(max_workers=8) as ex:
+        for (name, _code), rows in zip(sw1, ex.map(lambda x: members(x[1]), sw1)):
+            for r in rows:
+                sym = (r.get("symbol") or "").strip()
+                if sym:
+                    mapping[sym] = name
+    if verbose:
+        print(f"  行业映射：{len(sw1)} 个申万一级行业，覆盖 {len(mapping)} 只",
+              file=sys.stderr)
+    return mapping
+
+
+def _offline() -> bool:
+    """
+    是否处于离线模式（不发起任何网络请求）。
+
+    ⚠️ 为什么需要：CI 用 `--offline` 跑测试，而 `classify_sector` 会去拉
+       行业映射（2.5 秒 + 网络）。如果不拦住，离线测试会真的联网 ——
+       慢、不稳定、还可能超时。
+
+    测试里设 `QUANT_OFFLINE=1`，`_load_industry_map()` 就直接返回空，
+    走名称关键词兜底。
+    """
+    return os.environ.get("QUANT_OFFLINE", "").strip() not in ("", "0", "false")
+
+
+def _load_industry_map(verbose: bool = False) -> dict[str, str]:
+    """
+    取行业映射：进程内缓存 → 磁盘缓存 → 网络。拿不到就返回 {}（回退名称法）。
+
+    绝不抛异常：行业分类只是分散度控制，拿不到不该让整个选股失败。
+    离线模式下直接返回 {}，不读缓存也不联网（保证测试可复现）。
+    """
+    global _INDUSTRY_MAP
+    if _INDUSTRY_MAP is not None:
+        return _INDUSTRY_MAP
+
+    # 离线：不读缓存也不联网。读缓存会让测试结果依赖本机状态，
+    # 那样「同一份代码在不同机器上结果不同」，测试就没意义了。
+    if _offline():
+        _INDUSTRY_MAP = {}
+        return _INDUSTRY_MAP
+
+    # 磁盘缓存
+    try:
+        if INDUSTRY_CACHE.exists():
+            raw = json.loads(INDUSTRY_CACHE.read_text(encoding="utf8"))
+            age_days = (time.time() - float(raw.get("at", 0))) / 86400.0
+            if age_days <= INDUSTRY_TTL_DAYS and raw.get("map"):
+                _INDUSTRY_MAP = {str(k): str(v) for k, v in raw["map"].items()}
+                if verbose:
+                    print(f"  行业映射：磁盘缓存 {len(_INDUSTRY_MAP)} 只"
+                          f"（{age_days:.1f} 天前）", file=sys.stderr)
+                return _INDUSTRY_MAP
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    # 网络
+    try:
+        mapping = _fetch_industry_map(verbose=verbose)
+    except Exception:                                    # noqa: BLE001
+        _INDUSTRY_MAP = {}
+        return _INDUSTRY_MAP
+
+    _INDUSTRY_MAP = mapping
+    try:
+        INDUSTRY_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = INDUSTRY_CACHE.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"at": time.time(), "map": mapping},
+                                  ensure_ascii=False), encoding="utf8")
+        tmp.replace(INDUSTRY_CACHE)
+    except OSError:
+        pass                                          # 缓存写失败不影响使用
+    return _INDUSTRY_MAP
+
+
+def set_industry_map(mapping: dict[str, str] | None) -> None:
+    """
+    手动注入行业映射（测试用）。
+
+    这样测试既能验证「走真实映射」的路径，又完全离线、
+    不依赖网络和本机缓存。
+    """
+    global _INDUSTRY_MAP
+    _INDUSTRY_MAP = dict(mapping) if mapping is not None else None
+
+
+def classify_sector(name: str, symbol: str = "") -> str:
+    """
+    判定行业。优先真实申万一级映射，拿不到才用名称关键词猜。
+
+    返回申万一级行业名（如「银行」→「金融」不在这一层，实际是
+    「银行」属于「银行」… 注意申万一级没有「金融」这个大类，
+    银行/非银金融是分开的两级）。拿不到时返回「其它」。
+    """
+    m = _load_industry_map()
+    if symbol and symbol in m:
+        return m[symbol]
     if not name:
         return "其它"
     for sector, keywords in SECTOR_RULES:

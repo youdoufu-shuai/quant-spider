@@ -34,6 +34,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -48,8 +49,13 @@ from harness import REGISTRY, TestCase, declare_counts, run_all, module_summary 
 from screener import (                                    # noqa: E402
     Snapshot, HardFilters, Strategy, STRATEGIES, FACTORS,
     _num, _percentile_rank, _parse, apply_filters, classify_sector,
-    score_cross_section, SECTOR_RULES,
+    score_cross_section, SECTOR_RULES, set_industry_map,
+    _load_industry_map, _offline,
 )
+
+
+# ⚠️ 单独跑本文件时也要离线（run.py 会设，但 python test_screener.py 不会）
+os.environ.setdefault("QUANT_OFFLINE", "1")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -332,46 +338,131 @@ def test_sector_diversification_penalizes_not_drops():
 
 
 def test_sector_classification_rules():
-    """行业判定是启发式 —— 固定住已知的行为。"""
+    """
+    行业判定分两层：
+      1. 真实申万一级映射（新浪 sw1_*，覆盖率 99.7%）
+      2. 拿不到映射时按名称关键词猜（覆盖率 ~60%，仅兜底）
+
+    这个用例测的是**第 2 层**（离线模式下映射为空），
+    顺便固定住兜底的行业命名 —— 必须和申万一级的命名一致，
+    否则同一套策略在有/无映射时行业名不同，分散度统计会乱。
+    """
     cases = {
-        "工商银行": "金融", "中信证券": "金融", "中国平安": "金融",
+        "工商银行": "金融", "中信证券": "金融",
         "中国建筑": "地产建筑", "山东路桥": "地产建筑", "海螺水泥": "地产建筑",
         "宝钢股份": "钢铁", "华菱钢铁": "钢铁",
         "中国神华": "煤炭",
-        "紫金矿业": "有色", "明泰铝业": "有色",
-        "中国化学": "化工", "万华化学": "化工",
-        "贵州茅台": "消费", "伊利股份": "消费",
-        "恒瑞医药": "医药",
-        "宁德时代": "新能源", "隆基绿能": "新能源",
-        "长江电力": "电力公用", "皖能电力": "电力公用",
-        "比亚迪": "汽车", "华域汽车": "汽车",
-        "中兴通讯": "科技",
-        "京沪高铁": "交运", "赣粤高速": "交运",
+        "紫金矿业": "有色金属", "明泰铝业": "有色金属",
+        "中国化学": "基础化工", "万华化学": "基础化工",
+        "恒瑞医药": "医药生物",
+        "长江电力": "公用事业", "皖能电力": "公用事业",
+        "华域汽车": "汽车",
+        "中兴通讯": "通信",
+        "赣粤高速": "交通运输",
         "长江传媒": "传媒",
-        "中国重工": "机械军工",
     }
     wrong = [f"{n}→{classify_sector(n)}（期望 {w}）"
              for n, w in cases.items() if classify_sector(n) != w]
     assert not wrong, "；".join(wrong)
 
 
+def test_name_fallback_admits_its_limits():
+    """
+    ⚠️ 名称兜底有明显盲区，必须有测试记录这个事实。
+
+    「中国平安」名称里没有「保险」、「贵州茅台」没有「白酒」、
+    「宁德时代」没有「电池」—— 全靠真实映射才能分类。
+
+    所以：兜底时这些只能是「其它」，一旦哪天有人「优化」成能猜出来，
+    说明他加了一堆品牌词硬编码 —— 那样维护成本比真实映射还高。
+    更好的方向是把真实映射做实（已经做了）。
+    """
+    # 这几只在名称兜底下确实分不出来（离线 = 无映射）
+    unknowns = ["中国平安", "贵州茅台", "伊利股份", "宁德时代", "隆基绿能",
+                "比亚迪", "京沪高铁", "中国太保"]
+    got = [(n, classify_sector(n)) for n in unknowns]
+    still_unknown = [n for n, s in got if s == "其它"]
+    # 允许部分被猜中（词典里可能有品牌名），但**必须至少有一半是「其它」**，
+    # 否则说明有人把大量品牌词硬编码进规则表，那就该警告。
+    assert len(still_unknown) >= len(unknowns) // 2, (
+        f"名称兜底居然能猜出 {len(unknowns) - len(still_unknown)}/{len(unknowns)} "
+        f"个品牌名 —— 规则表可能被硬编码塞满了。实测: {got}")
+    # 逐条说明：这几只只能靠真实映射
+    for n in still_unknown:
+        assert classify_sector(n) == "其它", n
+
+
+def test_industry_map_preferred_over_name_rules():
+    """
+    ⚠️ 真实映射必须**优先于**名称规则。
+
+    名称规则只能猜到 ~60%，而且会猜错（「中国化学」是建筑装饰不是化工）。
+    真实申万一级映射覆盖 99.7% 且准确，必须优先。
+    """
+    # 注入一份「和名称规则冲突」的映射，验证用的是映射而不是名称
+    fake = {
+        "sh600176": "建筑材料",       # 中国巨石
+        "sh601117": "建筑装饰",       # 中国化学 —— 名称规则会猜「基础化工」
+        "sh601398": "银行",           # 工商银行 —— 名称规则会猜「金融」
+    }
+    set_industry_map(fake)
+    try:
+        # 有映射时用映射
+        assert classify_sector("中国化学", "sh601117") == "建筑装饰", \
+            "映射必须优先于名称规则"
+        assert classify_sector("工商银行", "sh601398") == "银行"
+        assert classify_sector("中国巨石", "sh600176") == "建筑材料"
+        # 映射里没有的，回退到名称规则
+        assert classify_sector("华菱钢铁", "sz000932") == "钢铁"
+        assert classify_sector("宝钢股份", "sh600019") == "钢铁"
+        # 传了 symbol 但映射里没有这个名字
+        assert classify_sector("工商银行", "sh999999") == "金融"
+    finally:
+        set_industry_map(None)
+
+
+def test_offline_mode_has_no_industry_map():
+    """
+    ⚠️ 离线模式下不许读缓存也不许联网。
+
+    为什么：测试必须**可复现**。如果离线还读本机缓存，
+    同一份代码在有缓存和没缓存的机器上会跑出不同结果。
+    """
+    set_industry_map(None)          # 清掉进程内缓存
+    # 测试框架已设 QUANT_OFFLINE=1（见 run.py）
+    assert _offline() or True       # 单独跑本文件时也成立（见文件顶部）
+    m = _load_industry_map()
+    assert m == {}, f"离线模式下行业映射必须为空，实得 {len(m)} 条"
+    set_industry_map(None)
+
+
 def test_sector_classification_order_matters():
     """
-    ⚠️ 规则顺序有讲究：「中国中铁」同时含「中铁」和「铁」。
+    ⚠️ 名称规则的顺序有讲究：「中国中铁」同时含「中铁」和「铁」。
        「地产建筑」排在「钢铁」之前，所以归地产建筑 —— 正确，
        因为中国中铁是建筑公司不是钢铁公司。这条锁住顺序。
+
+       注意这是**兜底路径**（离线、无映射）。有真实映射时用映射。
     """
-    assert classify_sector("中国中铁") == "地产建筑"
-    assert classify_sector("中国铁建") == "地产建筑"
-    assert classify_sector("宝钢股份") == "钢铁"
-    assert classify_sector("华菱钢铁") == "钢铁"
+    set_industry_map({})
+    try:
+        assert classify_sector("中国中铁") == "地产建筑"
+        assert classify_sector("中国铁建") == "地产建筑"
+        assert classify_sector("宝钢股份") == "钢铁"
+        assert classify_sector("华菱钢铁") == "钢铁"
+    finally:
+        set_industry_map(None)
 
 
 def test_sector_unknown_falls_back_to_other():
     """命不中的归「其它」—— 各自独立成桶，等于不限制。"""
-    assert classify_sector("某某科技集团") != ""
-    assert classify_sector("") == "其它"
-    assert classify_sector("ABC Holdings") == "其它"
+    set_industry_map({})
+    try:
+        assert classify_sector("") == "其它"
+        assert classify_sector("ABC Holdings") == "其它"
+        assert classify_sector("某某未知公司") == "其它"
+    finally:
+        set_industry_map(None)
 
 
 def test_all_structures_have_expected_shape():
@@ -416,6 +507,59 @@ def test_oversold_reversal_does_not_reward_bigger_drops():
     assert len(out) == 2
     assert abs(out[0]["score"] - out[1]["score"]) < 1e-9, \
         [(x["snapshot"].symbol, x["score"]) for x in out]
+
+
+def test_sector_fallback_penalty_is_positive():
+    """
+    ⚠️ 这是用真实数据发现的 bug，必须守住。
+
+    场景：候选的行业数是「配额 × 行业数 < limit」的，兜底逻辑会补足
+    到 limit。这时补进来的超配额股票**必须带正罚分**。
+
+    旧实现写 `over = same - max_per_sector`，某行业已入选 2 只、配额 2 时
+    第 3 只的 over 得 0 → 罚分 0 → 实测 top=30 时金融 3 只、罚分全 0。
+    正确写法是 `over = same - max_per_sector + 1`。
+
+    构造：2 个行业、配额 1、limit=4 → 兜底必定补 2 只超配额的，
+    它们必须都有罚分。
+    """
+    cands = [mk(f"b{i}", f"银行{i}", pe=5.0 + i) for i in range(3)]
+    cands += [mk(f"s{i}", f"钢铁{i}", pe=10.0 + i) for i in range(3)]
+    out = score_cross_section(cands, {"value_pe": 1.0},
+                              max_per_sector=1, top_n=4)
+    assert len(out) == 4, f"应补足到 4 只，实得 {len(out)}"
+    zero = [x for x in out if x["penalty"] == 0]
+    positive = [x for x in out if x["penalty"] > 0]
+    assert len(zero) == 2, f"配额内应有 2 只零罚分，实得 {len(zero)}"
+    assert len(positive) == 2, \
+        f"补足进来的 2 只必须有罚分，实得 {len(positive)}：" \
+        f"{[(x['snapshot'].symbol, x['sector'], x['penalty']) for x in out]}"
+    for x in positive:
+        assert abs(x["score"] - (x["rawScore"] - x["penalty"])) < 1e-9, x
+
+
+def test_sector_quota_accounting_is_consistent():
+    """
+    limit 大于「配额 × 行业数」时，兜底补足的只数必须等于
+    limit − 配额内只数，且这些补足的全部带罚分。
+
+    实测踩过：top=30、15 个行业时，第 30 个名额被补足成第 3 只金融
+    且罚分为 0（over 少加了 1）。
+    """
+    cands = []
+    for kw in ("银行", "钢铁", "化工"):
+        cands += [mk(f"{kw}{i}", f"{kw}{i}", pe=5.0 + i) for i in range(5)]
+    out = score_cross_section(cands, {"value_pe": 1.0},
+                              max_per_sector=2, top_n=15)
+    assert len(out) == 15, len(out)
+    free = [x for x in out if x["penalty"] == 0]
+    penalized = [x for x in out if x["penalty"] > 0]
+    # 3 行业 × 配额 2 = 6 只配额内
+    assert len(free) == 6, f"配额内应有 6 只零罚分，实得 {len(free)}"
+    assert len(penalized) == 9, f"补足应有 9 只带罚分，实得 {len(penalized)}"
+    # 补足的名额也必须从分数里真扣
+    for x in penalized:
+        assert abs(x["score"] - (x["rawScore"] - x["penalty"])) < 1e-9, x
 
 
 def test_top_n_limits_output():

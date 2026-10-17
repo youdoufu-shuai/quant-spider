@@ -22,7 +22,8 @@
 
 import http from 'node:http';
 import { execFile, spawnSync } from 'node:child_process';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, stat, writeFile, unlink } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -448,6 +449,115 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ error: String(e.message || e) }));
       }
       return;
+    }
+
+    // ── AI 组合 API（把选股结果建成模拟盘组合，跟踪收益）──
+    //   GET    /api/portfolio/list        列出所有组合（带收益）
+    //   POST   /api/portfolio/create      用选股结果建组合
+    //   GET    /api/portfolio/:id         组合明细
+    //   POST   /api/portfolio/:id/refresh 刷新行情
+    //   DELETE /api/portfolio/:id         删除
+    //
+    // 为什么不复用 /api/paper/*：
+    //   模拟盘会话是**单标的**的（只有一个 qty），而组合是多标的。
+    //   硬套要建 N 个会话，还会撞上 MAX_SESSIONS=8 的淘汰逻辑 ——
+    //   组合成员会被静默删掉，收益统计就错了。
+    if (pathname === '/api/portfolio/list' && req.method === 'GET') {
+      try {
+        const out = await runPython(path.join(here, 'ai_portfolio.py'),
+                                    ['--list', '--json'], 30000);
+        res.writeHead(200, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+        res.end(typeof out === 'string' ? out : JSON.stringify(out));
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': TYPES['.json'] });
+        res.end(JSON.stringify({ error: String(e.message || e) }));
+      }
+      return;
+    }
+
+    if (pathname === '/api/portfolio/create' && req.method === 'POST') {
+      let body = '';
+      let over = false;
+      req.on('data', (c) => {
+        body += c;
+        if (body.length > 4e5) { over = true; req.destroy(); }
+      });
+      req.on('end', async () => {
+        if (over) return;
+        let p = {};
+        try { p = JSON.parse(body || '{}'); } catch { p = {}; }
+        const strategy = String(p.strategy || 'dual_low').replace(/[^\w-]/g, '');
+        const capital = Math.max(10000, Math.min(1e9, Number(p.capital) || 1000000));
+
+        // 两条路径：
+        //   A) 页面把选股结果（picks）传上来 → 写临时文件，Python 读
+        //   B) 只给策略 → Python 自己重跑一遍选股
+        //
+        // ⚠️ 走文件而不是命令行参数：picks 是结构化数据（含中文名、
+        //    AI 给的理由），拼进命令行有长度限制和转义风险。
+        let tmp = null;
+        try {
+          let args;
+          if (Array.isArray(p.picks) && p.picks.length) {
+            tmp = path.join(tmpdir(), `quant-picks-${Date.now()}-${process.pid}.json`);
+            await writeFile(tmp, JSON.stringify({
+              strategy,
+              label: String(p.label || '').slice(0, 60),
+              mode: String(p.mode || 'local').slice(0, 10),
+              capital,
+              market: String(p.market || 'ashare').slice(0, 10),
+              picks: p.picks.slice(0, 20).map((x) => ({
+                symbol: String(x.symbol || '').slice(0, 12),
+                name: String(x.name || '').slice(0, 30),
+                sector: String(x.sector || '其它').slice(0, 20),
+                price: Number(x.price ?? x.close ?? 0) || 0,
+                reason: String(x.thesis || x.reason || '').slice(0, 200),
+                confidence: Number(x.confidence) || 0.5,
+              })),
+            }), 'utf8');
+            args = ['--create-from-file', tmp, '--json'];
+          } else {
+            args = ['--create', strategy, '--top',
+                    String(Math.max(1, Math.min(20, Number(p.top) || 8))),
+                    '--capital', String(capital), '--json'];
+            if (p.noAi) args.push('--no-ai');
+          }
+          const out = await runPython(path.join(here, 'ai_portfolio.py'),
+                                      args, 180000);
+          if (out && out.error) {
+            res.writeHead(400, { 'Content-Type': TYPES['.json'] });
+            res.end(JSON.stringify(out));
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+          res.end(typeof out === 'string' ? out : JSON.stringify(out));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': TYPES['.json'] });
+          res.end(JSON.stringify({ error: String(e.message || e) }));
+        } finally {
+          if (tmp) { unlink(tmp).catch(() => {}); }
+        }
+      });
+      return;
+    }
+
+    const pfm = pathname.match(/^\/api\/portfolio\/([A-Za-z0-9_-]{1,40})(\/refresh)?$/);
+    if (pfm) {
+      const pid = pfm[1];
+      const isRefresh = !!pfm[2];
+      const runP = (args) => runPython(path.join(here, 'ai_portfolio.py'), args,
+                                       isRefresh ? 120000 : 30000)
+        .then((out) => {
+          res.writeHead(200, { 'Content-Type': TYPES['.json'], 'Cache-Control': 'no-store' });
+          res.end(typeof out === 'string' ? out : JSON.stringify(out));
+        })
+        .catch((e) => {
+          res.writeHead(500, { 'Content-Type': TYPES['.json'] });
+          res.end(JSON.stringify({ error: String(e.message || e) }));
+        });
+      if (req.method === 'DELETE') { runP(['--delete', pid, '--json']); return; }
+      if (req.method === 'POST' && isRefresh) { runP(['--refresh', pid, '--json']); return; }
+      if (req.method === 'GET' && !isRefresh) { runP(['--show', pid, '--json']); return; }
     }
 
     // ── 选股 API（三层漏斗）────────────────────────────────
