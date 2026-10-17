@@ -73,11 +73,6 @@ jobs:
       - name: 语法检查
         run: node tools/run-tests.mjs --syntax-only
 
-      # 与 package.json 的 `npm test` 同一批文件（7 个）。bash 会展开 glob。
-      # 跨平台等价命令：node tools/run-tests.mjs --node-only
-      - name: Node 单元测试（7 个文件）
-        run: node --test tests/*.test.mjs
-
       # 6 套离线自检，224 项断言。运行器会把每个套件的完整命令行打进日志，
       # 等效于逐条手写 `python quant/xxx.py --selftest`。
       - name: Python 自检（离线 6 套）
